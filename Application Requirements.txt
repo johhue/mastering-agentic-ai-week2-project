@@ -1,0 +1,140 @@
+Project 4: Customer Support Knowledge Base with Hybrid Search
+
+ 
+
+Description
+
+Build a customer support bot that combines keyword search and semantic search (hybrid retrieval) over support tickets, FAQs, and product manuals. Implement a confidence-based fallback: when the system is not sure of an answer, it escalates to a human rather than hallucinating. Test with 20 real-world-style support queries and measure first-contact resolution rate. Highly relevant for e-commerce, SaaS, and consumer-facing companies where bad AI answers directly cost customer trust.
+
+ 
+
+Best For Product Managers (customer experience), Software Engineers (implementation), Founders (MVP for their product), QA Engineers (testing edge cases), Commerce/Retail roles.
+
+ 
+
+Deliverable Working support bot with hybrid search + escalation logic, tested against 20 queries with resolution metrics.
+
+ 
+
+Submission Demo recording + GitHub link or zip file + evaluation metrics document.
+
+ 
+
+Difficulty Intermediate | Code and n8n options | Engineers add custom reranking
+
+ 
+
+Create a data loader script which uploads documents in a folder to Pinecone vector database
+
+ 
+
+Build a customer support bot that combines keyword search and semantic search (hybrid retrieval) over support tickets, FAQs, and product manuals. Implement a confidence-based fallback: when the system is not sure of an answer, it escalates to a human rather than hallucinating. Test with 20 real-world-style support queries and measure first-contact resolution rate. Highly relevant for e-commerce, SaaS, and consumer-facing companies where bad AI answers directly cost customer trust.
+
+ 
+
+Data Set 1 -- Manuals
+
+ 
+
+                You are the CEO of a company called RemindMe which specializes in custom alarm and alerting software.
+
+ 
+
+                Your companys mission is to ensure people never miss a critical event in their life.
+
+ 
+
+                The software will let you set the events, and try different things to remind you of a task including:
+
+                - Alarm on your phone
+
+                - Automatically posting to social media that you need to be reminded
+
+                - Encouraging a friend or co worker to call or text you to remind you of an event
+
+                - Asking a close relative to physically make contact with you to remind you of this event.
+
+ 
+
+                You need to create a documents for your organization in each of these areas.
+
+ 
+
+                1. HR Policies
+
+                2. Compliance Manuals
+
+                3. Legal Disclosures
+
+                4. Product Documentation
+
+                5. User Guides
+
+                6. Help Desk Manuals
+
+                7. FAQ's
+
+ 
+
+                Each document should have the following sections:
+
+                - Document Title
+
+                - Table of Contents
+
+                - Author
+
+                - Revision History
+
+                - Description
+
+                - Sections relevant for this document
+
+ 
+
+                Each document be about 4096 characters and human readable.
+
+ 
+
+                Place the documents in a folder called "Company Manuals"
+
+ 
+
+Data Set 2 -- Data
+
+ 
+
+                You are the CEO of a company called RemindMe which specializes in custom alarm and alerting software.
+
+                Your companys mission is to ensure people never miss a critical event in their life. 
+
+                The software will let you set the events, and try different things to remind you of a task including:
+
+                - Alarm on your phone
+
+                - Automatically posting to social media that you need to be reminded
+
+                - Encouraging a friend or co worker to call or text you to remind you of an event
+
+                - Asking a close relative to physically make contact with you to remind you of this event.
+
+
+                You need to create mock data for the following operational areas:
+
+ 
+
+                - Employee List (Employee Number, Job Title, Salary, SSN, Home Address, Phone Number Job Title Should be: CEO, HR, Sales, QA Engineer, Software Engineer.
+
+                - Customer List (Customer Number, Date, Username, First Name, Last Name, email address)
+
+                - Help Desk Tickets (Ticket Number, Date, Description, Severity, Username). Username should be in Customer List.
+
+                - Software Variances (Defect Number, Date, Description, Severity, DetectedBy). DetectedBy should be Employees in Employee List of the QA Engineer Role
+
+ 
+
+                Each document should include at least 50 records and be in json format. Include meta data. 
+
+                Place the documents in a folder called "RemindMe Company Data"
+
+ 

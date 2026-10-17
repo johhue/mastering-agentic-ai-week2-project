@@ -1,0 +1,422 @@
+{
+  "metadata": {
+    "company": "RemindMe",
+    "dataset": "Help Desk Tickets",
+    "generatedOn": "2026-10-17",
+    "recordCount": 50,
+    "classification": "Synthetic mock operational data.",
+    "relationshipRules": [
+      "username values must exist in customer_list.json customers.username"
+    ],
+    "fields": [
+      "ticketNumber",
+      "date",
+      "description",
+      "severity",
+      "username",
+      "status"
+    ]
+  },
+  "tickets": [
+    {
+      "ticketNumber": "T8001",
+      "date": "2026-02-01",
+      "description": "Phone alarm did not sound while device was in focus mode",
+      "severity": "Medium",
+      "username": "user001",
+      "status": "Open"
+    },
+    {
+      "ticketNumber": "T8002",
+      "date": "2026-03-03",
+      "description": "User needs help updating trusted contact phone number",
+      "severity": "High",
+      "username": "user002",
+      "status": "In Review"
+    },
+    {
+      "ticketNumber": "T8003",
+      "date": "2026-04-05",
+      "description": "Social reminder preview displayed outdated event title",
+      "severity": "Critical",
+      "username": "user003",
+      "status": "Pending Customer"
+    },
+    {
+      "ticketNumber": "T8004",
+      "date": "2026-05-07",
+      "description": "Relative contact request was sent after event cancellation",
+      "severity": "Low",
+      "username": "user004",
+      "status": "Resolved"
+    },
+    {
+      "ticketNumber": "T8005",
+      "date": "2026-06-09",
+      "description": "Customer cannot verify new email address",
+      "severity": "Medium",
+      "username": "user005",
+      "status": "Open"
+    },
+    {
+      "ticketNumber": "T8006",
+      "date": "2026-07-11",
+      "description": "Recurring reminder skipped the second weekly occurrence",
+      "severity": "High",
+      "username": "user006",
+      "status": "In Review"
+    },
+    {
+      "ticketNumber": "T8007",
+      "date": "2026-08-13",
+      "description": "Friend outreach message needs opt-out confirmation",
+      "severity": "Critical",
+      "username": "user007",
+      "status": "Pending Customer"
+    },
+    {
+      "ticketNumber": "T8008",
+      "date": "2026-09-15",
+      "description": "User reports duplicate push notifications",
+      "severity": "Low",
+      "username": "user008",
+      "status": "Resolved"
+    },
+    {
+      "ticketNumber": "T8009",
+      "date": "2026-10-17",
+      "description": "Time zone changed after travel and reminder time looked wrong",
+      "severity": "Medium",
+      "username": "user009",
+      "status": "Open"
+    },
+    {
+      "ticketNumber": "T8010",
+      "date": "2026-02-19",
+      "description": "Customer asks how to pause reminders during vacation",
+      "severity": "High",
+      "username": "user010",
+      "status": "In Review"
+    },
+    {
+      "ticketNumber": "T8011",
+      "date": "2026-03-21",
+      "description": "Phone alarm did not sound while device was in focus mode",
+      "severity": "Critical",
+      "username": "user011",
+      "status": "Pending Customer"
+    },
+    {
+      "ticketNumber": "T8012",
+      "date": "2026-04-23",
+      "description": "User needs help updating trusted contact phone number",
+      "severity": "Low",
+      "username": "user012",
+      "status": "Resolved"
+    },
+    {
+      "ticketNumber": "T8013",
+      "date": "2026-05-25",
+      "description": "Social reminder preview displayed outdated event title",
+      "severity": "Medium",
+      "username": "user013",
+      "status": "Open"
+    },
+    {
+      "ticketNumber": "T8014",
+      "date": "2026-06-27",
+      "description": "Relative contact request was sent after event cancellation",
+      "severity": "High",
+      "username": "user014",
+      "status": "In Review"
+    },
+    {
+      "ticketNumber": "T8015",
+      "date": "2026-07-02",
+      "description": "Customer cannot verify new email address",
+      "severity": "Critical",
+      "username": "user015",
+      "status": "Pending Customer"
+    },
+    {
+      "ticketNumber": "T8016",
+      "date": "2026-08-04",
+      "description": "Recurring reminder skipped the second weekly occurrence",
+      "severity": "Low",
+      "username": "user016",
+      "status": "Resolved"
+    },
+    {
+      "ticketNumber": "T8017",
+      "date": "2026-09-06",
+      "description": "Friend outreach message needs opt-out confirmation",
+      "severity": "Medium",
+      "username": "user017",
+      "status": "Open"
+    },
+    {
+      "ticketNumber": "T8018",
+      "date": "2026-10-08",
+      "description": "User reports duplicate push notifications",
+      "severity": "High",
+      "username": "user018",
+      "status": "In Review"
+    },
+    {
+      "ticketNumber": "T8019",
+      "date": "2026-02-10",
+      "description": "Time zone changed after travel and reminder time looked wrong",
+      "severity": "Critical",
+      "username": "user019",
+      "status": "Pending Customer"
+    },
+    {
+      "ticketNumber": "T8020",
+      "date": "2026-03-12",
+      "description": "Customer asks how to pause reminders during vacation",
+      "severity": "Low",
+      "username": "user020",
+      "status": "Resolved"
+    },
+    {
+      "ticketNumber": "T8021",
+      "date": "2026-04-14",
+      "description": "Phone alarm did not sound while device was in focus mode",
+      "severity": "Medium",
+      "username": "user021",
+      "status": "Open"
+    },
+    {
+      "ticketNumber": "T8022",
+      "date": "2026-05-16",
+      "description": "User needs help updating trusted contact phone number",
+      "severity": "High",
+      "username": "user022",
+      "status": "In Review"
+    },
+    {
+      "ticketNumber": "T8023",
+      "date": "2026-06-18",
+      "description": "Social reminder preview displayed outdated event title",
+      "severity": "Critical",
+      "username": "user023",
+      "status": "Pending Customer"
+    },
+    {
+      "ticketNumber": "T8024",
+      "date": "2026-07-20",
+      "description": "Relative contact request was sent after event cancellation",
+      "severity": "Low",
+      "username": "user024",
+      "status": "Resolved"
+    },
+    {
+      "ticketNumber": "T8025",
+      "date": "2026-08-22",
+      "description": "Customer cannot verify new email address",
+      "severity": "Medium",
+      "username": "user025",
+      "status": "Open"
+    },
+    {
+      "ticketNumber": "T8026",
+      "date": "2026-09-24",
+      "description": "Recurring reminder skipped the second weekly occurrence",
+      "severity": "High",
+      "username": "user026",
+      "status": "In Review"
+    },
+    {
+      "ticketNumber": "T8027",
+      "date": "2026-10-26",
+      "description": "Friend outreach message needs opt-out confirmation",
+      "severity": "Critical",
+      "username": "user027",
+      "status": "Pending Customer"
+    },
+    {
+      "ticketNumber": "T8028",
+      "date": "2026-02-01",
+      "description": "User reports duplicate push notifications",
+      "severity": "Low",
+      "username": "user028",
+      "status": "Resolved"
+    },
+    {
+      "ticketNumber": "T8029",
+      "date": "2026-03-03",
+      "description": "Time zone changed after travel and reminder time looked wrong",
+      "severity": "Medium",
+      "username": "user029",
+      "status": "Open"
+    },
+    {
+      "ticketNumber": "T8030",
+      "date": "2026-04-05",
+      "description": "Customer asks how to pause reminders during vacation",
+      "severity": "High",
+      "username": "user030",
+      "status": "In Review"
+    },
+    {
+      "ticketNumber": "T8031",
+      "date": "2026-05-07",
+      "description": "Phone alarm did not sound while device was in focus mode",
+      "severity": "Critical",
+      "username": "user031",
+      "status": "Pending Customer"
+    },
+    {
+      "ticketNumber": "T8032",
+      "date": "2026-06-09",
+      "description": "User needs help updating trusted contact phone number",
+      "severity": "Low",
+      "username": "user032",
+      "status": "Resolved"
+    },
+    {
+      "ticketNumber": "T8033",
+      "date": "2026-07-11",
+      "description": "Social reminder preview displayed outdated event title",
+      "severity": "Medium",
+      "username": "user033",
+      "status": "Open"
+    },
+    {
+      "ticketNumber": "T8034",
+      "date": "2026-08-13",
+      "description": "Relative contact request was sent after event cancellation",
+      "severity": "High",
+      "username": "user034",
+      "status": "In Review"
+    },
+    {
+      "ticketNumber": "T8035",
+      "date": "2026-09-15",
+      "description": "Customer cannot verify new email address",
+      "severity": "Critical",
+      "username": "user035",
+      "status": "Pending Customer"
+    },
+    {
+      "ticketNumber": "T8036",
+      "date": "2026-10-17",
+      "description": "Recurring reminder skipped the second weekly occurrence",
+      "severity": "Low",
+      "username": "user036",
+      "status": "Resolved"
+    },
+    {
+      "ticketNumber": "T8037",
+      "date": "2026-02-19",
+      "description": "Friend outreach message needs opt-out confirmation",
+      "severity": "Medium",
+      "username": "user037",
+      "status": "Open"
+    },
+    {
+      "ticketNumber": "T8038",
+      "date": "2026-03-21",
+      "description": "User reports duplicate push notifications",
+      "severity": "High",
+      "username": "user038",
+      "status": "In Review"
+    },
+    {
+      "ticketNumber": "T8039",
+      "date": "2026-04-23",
+      "description": "Time zone changed after travel and reminder time looked wrong",
+      "severity": "Critical",
+      "username": "user039",
+      "status": "Pending Customer"
+    },
+    {
+      "ticketNumber": "T8040",
+      "date": "2026-05-25",
+      "description": "Customer asks how to pause reminders during vacation",
+      "severity": "Low",
+      "username": "user040",
+      "status": "Resolved"
+    },
+    {
+      "ticketNumber": "T8041",
+      "date": "2026-06-27",
+      "description": "Phone alarm did not sound while device was in focus mode",
+      "severity": "Medium",
+      "username": "user041",
+      "status": "Open"
+    },
+    {
+      "ticketNumber": "T8042",
+      "date": "2026-07-02",
+      "description": "User needs help updating trusted contact phone number",
+      "severity": "High",
+      "username": "user042",
+      "status": "In Review"
+    },
+    {
+      "ticketNumber": "T8043",
+      "date": "2026-08-04",
+      "description": "Social reminder preview displayed outdated event title",
+      "severity": "Critical",
+      "username": "user043",
+      "status": "Pending Customer"
+    },
+    {
+      "ticketNumber": "T8044",
+      "date": "2026-09-06",
+      "description": "Relative contact request was sent after event cancellation",
+      "severity": "Low",
+      "username": "user044",
+      "status": "Resolved"
+    },
+    {
+      "ticketNumber": "T8045",
+      "date": "2026-10-08",
+      "description": "Customer cannot verify new email address",
+      "severity": "Medium",
+      "username": "user045",
+      "status": "Open"
+    },
+    {
+      "ticketNumber": "T8046",
+      "date": "2026-02-10",
+      "description": "Recurring reminder skipped the second weekly occurrence",
+      "severity": "High",
+      "username": "user046",
+      "status": "In Review"
+    },
+    {
+      "ticketNumber": "T8047",
+      "date": "2026-03-12",
+      "description": "Friend outreach message needs opt-out confirmation",
+      "severity": "Critical",
+      "username": "user047",
+      "status": "Pending Customer"
+    },
+    {
+      "ticketNumber": "T8048",
+      "date": "2026-04-14",
+      "description": "User reports duplicate push notifications",
+      "severity": "Low",
+      "username": "user048",
+      "status": "Resolved"
+    },
+    {
+      "ticketNumber": "T8049",
+      "date": "2026-05-16",
+      "description": "Time zone changed after travel and reminder time looked wrong",
+      "severity": "Medium",
+      "username": "user049",
+      "status": "Open"
+    },
+    {
+      "ticketNumber": "T8050",
+      "date": "2026-06-18",
+      "description": "Customer asks how to pause reminders during vacation",
+      "severity": "High",
+      "username": "user050",
+      "status": "In Review"
+    }
+  ]
+}

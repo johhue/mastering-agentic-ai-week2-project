@@ -1,0 +1,524 @@
+{
+  "metadata": {
+    "company": "RemindMe",
+    "dataset": "Software Variances",
+    "generatedOn": "2026-10-17",
+    "recordCount": 50,
+    "classification": "Synthetic mock QA defect data.",
+    "relationshipRules": [
+      "detectedBy values must exist in employee_list.json employees.employeeNumber where jobTitle is QA Engineer"
+    ],
+    "fields": [
+      "defectNumber",
+      "date",
+      "description",
+      "severity",
+      "detectedBy",
+      "detectedByName",
+      "module",
+      "status"
+    ]
+  },
+  "softwareVariances": [
+    {
+      "defectNumber": "D3001",
+      "date": "2026-03-01",
+      "description": "Escalation timer started twice after manual acknowledgement",
+      "severity": "Low",
+      "detectedBy": "E1004",
+      "detectedByName": "Morgan Diaz",
+      "module": "Mobile Alarm",
+      "status": "New"
+    },
+    {
+      "defectNumber": "D3002",
+      "date": "2026-04-04",
+      "description": "Social media consent modal allowed save before preview loaded",
+      "severity": "Medium",
+      "detectedBy": "E1009",
+      "detectedByName": "Jamie Irwin",
+      "module": "Social Posting",
+      "status": "Triaged"
+    },
+    {
+      "defectNumber": "D3003",
+      "date": "2026-05-07",
+      "description": "Alarm retry count displayed one higher than actual attempts",
+      "severity": "High",
+      "detectedBy": "E1014",
+      "detectedByName": "Parker Nguyen",
+      "module": "Trusted Contacts",
+      "status": "In Progress"
+    },
+    {
+      "defectNumber": "D3004",
+      "date": "2026-06-10",
+      "description": "Trusted contact opt-out state not reflected in event editor",
+      "severity": "Critical",
+      "detectedBy": "E1019",
+      "detectedByName": "Finley Singh",
+      "module": "Escalation Engine",
+      "status": "Ready for Retest"
+    },
+    {
+      "defectNumber": "D3005",
+      "date": "2026-07-13",
+      "description": "Recurring reminder end date failed on leap-year boundary",
+      "severity": "Low",
+      "detectedBy": "E1024",
+      "detectedByName": "Micah Xu",
+      "module": "Support Console",
+      "status": "Closed"
+    },
+    {
+      "defectNumber": "D3006",
+      "date": "2026-08-16",
+      "description": "Help desk view showed full event note instead of redacted text",
+      "severity": "Medium",
+      "detectedBy": "E1029",
+      "detectedByName": "Blair Davis",
+      "module": "Mobile Alarm",
+      "status": "New"
+    },
+    {
+      "defectNumber": "D3007",
+      "date": "2026-09-19",
+      "description": "Delivery log sorted failed attempts above latest successful send",
+      "severity": "High",
+      "detectedBy": "E1034",
+      "detectedByName": "Indigo Ibarra",
+      "module": "Social Posting",
+      "status": "Triaged"
+    },
+    {
+      "defectNumber": "D3008",
+      "date": "2026-10-22",
+      "description": "Physical contact request template omitted cancellation notice",
+      "severity": "Critical",
+      "detectedBy": "E1039",
+      "detectedByName": "Nico Nelson",
+      "module": "Trusted Contacts",
+      "status": "In Progress"
+    },
+    {
+      "defectNumber": "D3009",
+      "date": "2026-03-25",
+      "description": "Push notification badge count did not clear after acknowledgement",
+      "severity": "Low",
+      "detectedBy": "E1044",
+      "detectedByName": "Teagan Thomas",
+      "module": "Escalation Engine",
+      "status": "Ready for Retest"
+    },
+    {
+      "defectNumber": "D3010",
+      "date": "2026-04-01",
+      "description": "Time zone conversion produced stale preview after profile update",
+      "severity": "Medium",
+      "detectedBy": "E1049",
+      "detectedByName": "Milan Stone",
+      "module": "Support Console",
+      "status": "Closed"
+    },
+    {
+      "defectNumber": "D3011",
+      "date": "2026-05-04",
+      "description": "Escalation timer started twice after manual acknowledgement",
+      "severity": "High",
+      "detectedBy": "E1004",
+      "detectedByName": "Morgan Diaz",
+      "module": "Mobile Alarm",
+      "status": "New"
+    },
+    {
+      "defectNumber": "D3012",
+      "date": "2026-06-07",
+      "description": "Social media consent modal allowed save before preview loaded",
+      "severity": "Critical",
+      "detectedBy": "E1009",
+      "detectedByName": "Jamie Irwin",
+      "module": "Social Posting",
+      "status": "Triaged"
+    },
+    {
+      "defectNumber": "D3013",
+      "date": "2026-07-10",
+      "description": "Alarm retry count displayed one higher than actual attempts",
+      "severity": "Low",
+      "detectedBy": "E1014",
+      "detectedByName": "Parker Nguyen",
+      "module": "Trusted Contacts",
+      "status": "In Progress"
+    },
+    {
+      "defectNumber": "D3014",
+      "date": "2026-08-13",
+      "description": "Trusted contact opt-out state not reflected in event editor",
+      "severity": "Medium",
+      "detectedBy": "E1019",
+      "detectedByName": "Finley Singh",
+      "module": "Escalation Engine",
+      "status": "Ready for Retest"
+    },
+    {
+      "defectNumber": "D3015",
+      "date": "2026-09-16",
+      "description": "Recurring reminder end date failed on leap-year boundary",
+      "severity": "High",
+      "detectedBy": "E1024",
+      "detectedByName": "Micah Xu",
+      "module": "Support Console",
+      "status": "Closed"
+    },
+    {
+      "defectNumber": "D3016",
+      "date": "2026-10-19",
+      "description": "Help desk view showed full event note instead of redacted text",
+      "severity": "Critical",
+      "detectedBy": "E1029",
+      "detectedByName": "Blair Davis",
+      "module": "Mobile Alarm",
+      "status": "New"
+    },
+    {
+      "defectNumber": "D3017",
+      "date": "2026-03-22",
+      "description": "Delivery log sorted failed attempts above latest successful send",
+      "severity": "Low",
+      "detectedBy": "E1034",
+      "detectedByName": "Indigo Ibarra",
+      "module": "Social Posting",
+      "status": "Triaged"
+    },
+    {
+      "defectNumber": "D3018",
+      "date": "2026-04-25",
+      "description": "Physical contact request template omitted cancellation notice",
+      "severity": "Medium",
+      "detectedBy": "E1039",
+      "detectedByName": "Nico Nelson",
+      "module": "Trusted Contacts",
+      "status": "In Progress"
+    },
+    {
+      "defectNumber": "D3019",
+      "date": "2026-05-01",
+      "description": "Push notification badge count did not clear after acknowledgement",
+      "severity": "High",
+      "detectedBy": "E1044",
+      "detectedByName": "Teagan Thomas",
+      "module": "Escalation Engine",
+      "status": "Ready for Retest"
+    },
+    {
+      "defectNumber": "D3020",
+      "date": "2026-06-04",
+      "description": "Time zone conversion produced stale preview after profile update",
+      "severity": "Critical",
+      "detectedBy": "E1049",
+      "detectedByName": "Milan Stone",
+      "module": "Support Console",
+      "status": "Closed"
+    },
+    {
+      "defectNumber": "D3021",
+      "date": "2026-07-07",
+      "description": "Escalation timer started twice after manual acknowledgement",
+      "severity": "Low",
+      "detectedBy": "E1004",
+      "detectedByName": "Morgan Diaz",
+      "module": "Mobile Alarm",
+      "status": "New"
+    },
+    {
+      "defectNumber": "D3022",
+      "date": "2026-08-10",
+      "description": "Social media consent modal allowed save before preview loaded",
+      "severity": "Medium",
+      "detectedBy": "E1009",
+      "detectedByName": "Jamie Irwin",
+      "module": "Social Posting",
+      "status": "Triaged"
+    },
+    {
+      "defectNumber": "D3023",
+      "date": "2026-09-13",
+      "description": "Alarm retry count displayed one higher than actual attempts",
+      "severity": "High",
+      "detectedBy": "E1014",
+      "detectedByName": "Parker Nguyen",
+      "module": "Trusted Contacts",
+      "status": "In Progress"
+    },
+    {
+      "defectNumber": "D3024",
+      "date": "2026-10-16",
+      "description": "Trusted contact opt-out state not reflected in event editor",
+      "severity": "Critical",
+      "detectedBy": "E1019",
+      "detectedByName": "Finley Singh",
+      "module": "Escalation Engine",
+      "status": "Ready for Retest"
+    },
+    {
+      "defectNumber": "D3025",
+      "date": "2026-03-19",
+      "description": "Recurring reminder end date failed on leap-year boundary",
+      "severity": "Low",
+      "detectedBy": "E1024",
+      "detectedByName": "Micah Xu",
+      "module": "Support Console",
+      "status": "Closed"
+    },
+    {
+      "defectNumber": "D3026",
+      "date": "2026-04-22",
+      "description": "Help desk view showed full event note instead of redacted text",
+      "severity": "Medium",
+      "detectedBy": "E1029",
+      "detectedByName": "Blair Davis",
+      "module": "Mobile Alarm",
+      "status": "New"
+    },
+    {
+      "defectNumber": "D3027",
+      "date": "2026-05-25",
+      "description": "Delivery log sorted failed attempts above latest successful send",
+      "severity": "High",
+      "detectedBy": "E1034",
+      "detectedByName": "Indigo Ibarra",
+      "module": "Social Posting",
+      "status": "Triaged"
+    },
+    {
+      "defectNumber": "D3028",
+      "date": "2026-06-01",
+      "description": "Physical contact request template omitted cancellation notice",
+      "severity": "Critical",
+      "detectedBy": "E1039",
+      "detectedByName": "Nico Nelson",
+      "module": "Trusted Contacts",
+      "status": "In Progress"
+    },
+    {
+      "defectNumber": "D3029",
+      "date": "2026-07-04",
+      "description": "Push notification badge count did not clear after acknowledgement",
+      "severity": "Low",
+      "detectedBy": "E1044",
+      "detectedByName": "Teagan Thomas",
+      "module": "Escalation Engine",
+      "status": "Ready for Retest"
+    },
+    {
+      "defectNumber": "D3030",
+      "date": "2026-08-07",
+      "description": "Time zone conversion produced stale preview after profile update",
+      "severity": "Medium",
+      "detectedBy": "E1049",
+      "detectedByName": "Milan Stone",
+      "module": "Support Console",
+      "status": "Closed"
+    },
+    {
+      "defectNumber": "D3031",
+      "date": "2026-09-10",
+      "description": "Escalation timer started twice after manual acknowledgement",
+      "severity": "High",
+      "detectedBy": "E1004",
+      "detectedByName": "Morgan Diaz",
+      "module": "Mobile Alarm",
+      "status": "New"
+    },
+    {
+      "defectNumber": "D3032",
+      "date": "2026-10-13",
+      "description": "Social media consent modal allowed save before preview loaded",
+      "severity": "Critical",
+      "detectedBy": "E1009",
+      "detectedByName": "Jamie Irwin",
+      "module": "Social Posting",
+      "status": "Triaged"
+    },
+    {
+      "defectNumber": "D3033",
+      "date": "2026-03-16",
+      "description": "Alarm retry count displayed one higher than actual attempts",
+      "severity": "Low",
+      "detectedBy": "E1014",
+      "detectedByName": "Parker Nguyen",
+      "module": "Trusted Contacts",
+      "status": "In Progress"
+    },
+    {
+      "defectNumber": "D3034",
+      "date": "2026-04-19",
+      "description": "Trusted contact opt-out state not reflected in event editor",
+      "severity": "Medium",
+      "detectedBy": "E1019",
+      "detectedByName": "Finley Singh",
+      "module": "Escalation Engine",
+      "status": "Ready for Retest"
+    },
+    {
+      "defectNumber": "D3035",
+      "date": "2026-05-22",
+      "description": "Recurring reminder end date failed on leap-year boundary",
+      "severity": "High",
+      "detectedBy": "E1024",
+      "detectedByName": "Micah Xu",
+      "module": "Support Console",
+      "status": "Closed"
+    },
+    {
+      "defectNumber": "D3036",
+      "date": "2026-06-25",
+      "description": "Help desk view showed full event note instead of redacted text",
+      "severity": "Critical",
+      "detectedBy": "E1029",
+      "detectedByName": "Blair Davis",
+      "module": "Mobile Alarm",
+      "status": "New"
+    },
+    {
+      "defectNumber": "D3037",
+      "date": "2026-07-01",
+      "description": "Delivery log sorted failed attempts above latest successful send",
+      "severity": "Low",
+      "detectedBy": "E1034",
+      "detectedByName": "Indigo Ibarra",
+      "module": "Social Posting",
+      "status": "Triaged"
+    },
+    {
+      "defectNumber": "D3038",
+      "date": "2026-08-04",
+      "description": "Physical contact request template omitted cancellation notice",
+      "severity": "Medium",
+      "detectedBy": "E1039",
+      "detectedByName": "Nico Nelson",
+      "module": "Trusted Contacts",
+      "status": "In Progress"
+    },
+    {
+      "defectNumber": "D3039",
+      "date": "2026-09-07",
+      "description": "Push notification badge count did not clear after acknowledgement",
+      "severity": "High",
+      "detectedBy": "E1044",
+      "detectedByName": "Teagan Thomas",
+      "module": "Escalation Engine",
+      "status": "Ready for Retest"
+    },
+    {
+      "defectNumber": "D3040",
+      "date": "2026-10-10",
+      "description": "Time zone conversion produced stale preview after profile update",
+      "severity": "Critical",
+      "detectedBy": "E1049",
+      "detectedByName": "Milan Stone",
+      "module": "Support Console",
+      "status": "Closed"
+    },
+    {
+      "defectNumber": "D3041",
+      "date": "2026-03-13",
+      "description": "Escalation timer started twice after manual acknowledgement",
+      "severity": "Low",
+      "detectedBy": "E1004",
+      "detectedByName": "Morgan Diaz",
+      "module": "Mobile Alarm",
+      "status": "New"
+    },
+    {
+      "defectNumber": "D3042",
+      "date": "2026-04-16",
+      "description": "Social media consent modal allowed save before preview loaded",
+      "severity": "Medium",
+      "detectedBy": "E1009",
+      "detectedByName": "Jamie Irwin",
+      "module": "Social Posting",
+      "status": "Triaged"
+    },
+    {
+      "defectNumber": "D3043",
+      "date": "2026-05-19",
+      "description": "Alarm retry count displayed one higher than actual attempts",
+      "severity": "High",
+      "detectedBy": "E1014",
+      "detectedByName": "Parker Nguyen",
+      "module": "Trusted Contacts",
+      "status": "In Progress"
+    },
+    {
+      "defectNumber": "D3044",
+      "date": "2026-06-22",
+      "description": "Trusted contact opt-out state not reflected in event editor",
+      "severity": "Critical",
+      "detectedBy": "E1019",
+      "detectedByName": "Finley Singh",
+      "module": "Escalation Engine",
+      "status": "Ready for Retest"
+    },
+    {
+      "defectNumber": "D3045",
+      "date": "2026-07-25",
+      "description": "Recurring reminder end date failed on leap-year boundary",
+      "severity": "Low",
+      "detectedBy": "E1024",
+      "detectedByName": "Micah Xu",
+      "module": "Support Console",
+      "status": "Closed"
+    },
+    {
+      "defectNumber": "D3046",
+      "date": "2026-08-01",
+      "description": "Help desk view showed full event note instead of redacted text",
+      "severity": "Medium",
+      "detectedBy": "E1029",
+      "detectedByName": "Blair Davis",
+      "module": "Mobile Alarm",
+      "status": "New"
+    },
+    {
+      "defectNumber": "D3047",
+      "date": "2026-09-04",
+      "description": "Delivery log sorted failed attempts above latest successful send",
+      "severity": "High",
+      "detectedBy": "E1034",
+      "detectedByName": "Indigo Ibarra",
+      "module": "Social Posting",
+      "status": "Triaged"
+    },
+    {
+      "defectNumber": "D3048",
+      "date": "2026-10-07",
+      "description": "Physical contact request template omitted cancellation notice",
+      "severity": "Critical",
+      "detectedBy": "E1039",
+      "detectedByName": "Nico Nelson",
+      "module": "Trusted Contacts",
+      "status": "In Progress"
+    },
+    {
+      "defectNumber": "D3049",
+      "date": "2026-03-10",
+      "description": "Push notification badge count did not clear after acknowledgement",
+      "severity": "Low",
+      "detectedBy": "E1044",
+      "detectedByName": "Teagan Thomas",
+      "module": "Escalation Engine",
+      "status": "Ready for Retest"
+    },
+    {
+      "defectNumber": "D3050",
+      "date": "2026-04-13",
+      "description": "Time zone conversion produced stale preview after profile update",
+      "severity": "Medium",
+      "detectedBy": "E1049",
+      "detectedByName": "Milan Stone",
+      "module": "Support Console",
+      "status": "Closed"
+    }
+  ]
+}

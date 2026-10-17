@@ -1,0 +1,470 @@
+{
+  "metadata": {
+    "company": "RemindMe",
+    "dataset": "Customer List",
+    "generatedOn": "2026-10-17",
+    "recordCount": 50,
+    "classification": "Synthetic mock data using example.com email addresses.",
+    "fields": [
+      "customerNumber",
+      "date",
+      "username",
+      "firstName",
+      "lastName",
+      "emailAddress",
+      "plan"
+    ]
+  },
+  "customers": [
+    {
+      "customerNumber": "C5001",
+      "date": "2026-01-01",
+      "username": "user001",
+      "firstName": "Remy",
+      "lastName": "Adams",
+      "emailAddress": "user001@example.com",
+      "plan": "Free"
+    },
+    {
+      "customerNumber": "C5002",
+      "date": "2026-02-02",
+      "username": "user002",
+      "firstName": "Milan",
+      "lastName": "Diaz",
+      "emailAddress": "user002@example.com",
+      "plan": "Plus"
+    },
+    {
+      "customerNumber": "C5003",
+      "date": "2026-03-03",
+      "username": "user003",
+      "firstName": "Zion",
+      "lastName": "Garcia",
+      "emailAddress": "user003@example.com",
+      "plan": "Family"
+    },
+    {
+      "customerNumber": "C5004",
+      "date": "2026-04-04",
+      "username": "user004",
+      "firstName": "Yael",
+      "lastName": "Jones",
+      "emailAddress": "user004@example.com",
+      "plan": "Professional"
+    },
+    {
+      "customerNumber": "C5005",
+      "date": "2026-05-05",
+      "username": "user005",
+      "firstName": "Wren",
+      "lastName": "Morris",
+      "emailAddress": "user005@example.com",
+      "plan": "Free"
+    },
+    {
+      "customerNumber": "C5006",
+      "date": "2026-06-06",
+      "username": "user006",
+      "firstName": "Val",
+      "lastName": "Patel",
+      "emailAddress": "user006@example.com",
+      "plan": "Plus"
+    },
+    {
+      "customerNumber": "C5007",
+      "date": "2026-07-07",
+      "username": "user007",
+      "firstName": "Teagan",
+      "lastName": "Singh",
+      "emailAddress": "user007@example.com",
+      "plan": "Family"
+    },
+    {
+      "customerNumber": "C5008",
+      "date": "2026-08-08",
+      "username": "user008",
+      "firstName": "Shawn",
+      "lastName": "Vega",
+      "emailAddress": "user008@example.com",
+      "plan": "Professional"
+    },
+    {
+      "customerNumber": "C5009",
+      "date": "2026-09-09",
+      "username": "user009",
+      "firstName": "River",
+      "lastName": "Young",
+      "emailAddress": "user009@example.com",
+      "plan": "Free"
+    },
+    {
+      "customerNumber": "C5010",
+      "date": "2026-10-10",
+      "username": "user010",
+      "firstName": "Phoenix",
+      "lastName": "Chen",
+      "emailAddress": "user010@example.com",
+      "plan": "Plus"
+    },
+    {
+      "customerNumber": "C5011",
+      "date": "2026-01-11",
+      "username": "user011",
+      "firstName": "Oakley",
+      "lastName": "Flores",
+      "emailAddress": "user011@example.com",
+      "plan": "Family"
+    },
+    {
+      "customerNumber": "C5012",
+      "date": "2026-02-12",
+      "username": "user012",
+      "firstName": "Nico",
+      "lastName": "Ibarra",
+      "emailAddress": "user012@example.com",
+      "plan": "Professional"
+    },
+    {
+      "customerNumber": "C5013",
+      "date": "2026-03-13",
+      "username": "user013",
+      "firstName": "Marley",
+      "lastName": "Lopez",
+      "emailAddress": "user013@example.com",
+      "plan": "Free"
+    },
+    {
+      "customerNumber": "C5014",
+      "date": "2026-04-14",
+      "username": "user014",
+      "firstName": "Lane",
+      "lastName": "Ortiz",
+      "emailAddress": "user014@example.com",
+      "plan": "Plus"
+    },
+    {
+      "customerNumber": "C5015",
+      "date": "2026-05-15",
+      "username": "user015",
+      "firstName": "Kai",
+      "lastName": "Scott",
+      "emailAddress": "user015@example.com",
+      "plan": "Family"
+    },
+    {
+      "customerNumber": "C5016",
+      "date": "2026-06-16",
+      "username": "user016",
+      "firstName": "Jules",
+      "lastName": "Valdez",
+      "emailAddress": "user016@example.com",
+      "plan": "Professional"
+    },
+    {
+      "customerNumber": "C5017",
+      "date": "2026-07-17",
+      "username": "user017",
+      "firstName": "Indigo",
+      "lastName": "Stone",
+      "emailAddress": "user017@example.com",
+      "plan": "Free"
+    },
+    {
+      "customerNumber": "C5018",
+      "date": "2026-08-18",
+      "username": "user018",
+      "firstName": "Gray",
+      "lastName": "Baker",
+      "emailAddress": "user018@example.com",
+      "plan": "Plus"
+    },
+    {
+      "customerNumber": "C5019",
+      "date": "2026-09-19",
+      "username": "user019",
+      "firstName": "Frankie",
+      "lastName": "Evans",
+      "emailAddress": "user019@example.com",
+      "plan": "Family"
+    },
+    {
+      "customerNumber": "C5020",
+      "date": "2026-10-20",
+      "username": "user020",
+      "firstName": "Elliot",
+      "lastName": "Hayes",
+      "emailAddress": "user020@example.com",
+      "plan": "Professional"
+    },
+    {
+      "customerNumber": "C5021",
+      "date": "2026-01-21",
+      "username": "user021",
+      "firstName": "Devon",
+      "lastName": "Kim",
+      "emailAddress": "user021@example.com",
+      "plan": "Free"
+    },
+    {
+      "customerNumber": "C5022",
+      "date": "2026-02-22",
+      "username": "user022",
+      "firstName": "Blair",
+      "lastName": "Nguyen",
+      "emailAddress": "user022@example.com",
+      "plan": "Plus"
+    },
+    {
+      "customerNumber": "C5023",
+      "date": "2026-03-23",
+      "username": "user023",
+      "firstName": "Tatum",
+      "lastName": "Quincy",
+      "emailAddress": "user023@example.com",
+      "plan": "Family"
+    },
+    {
+      "customerNumber": "C5024",
+      "date": "2026-04-24",
+      "username": "user024",
+      "firstName": "Sage",
+      "lastName": "Turner",
+      "emailAddress": "user024@example.com",
+      "plan": "Professional"
+    },
+    {
+      "customerNumber": "C5025",
+      "date": "2026-05-25",
+      "username": "user025",
+      "firstName": "Peyton",
+      "lastName": "Walker",
+      "emailAddress": "user025@example.com",
+      "plan": "Free"
+    },
+    {
+      "customerNumber": "C5026",
+      "date": "2026-06-26",
+      "username": "user026",
+      "firstName": "Noel",
+      "lastName": "Zimmer",
+      "emailAddress": "user026@example.com",
+      "plan": "Plus"
+    },
+    {
+      "customerNumber": "C5027",
+      "date": "2026-07-27",
+      "username": "user027",
+      "firstName": "Micah",
+      "lastName": "Davis",
+      "emailAddress": "user027@example.com",
+      "plan": "Family"
+    },
+    {
+      "customerNumber": "C5028",
+      "date": "2026-08-01",
+      "username": "user028",
+      "firstName": "Logan",
+      "lastName": "Grant",
+      "emailAddress": "user028@example.com",
+      "plan": "Professional"
+    },
+    {
+      "customerNumber": "C5029",
+      "date": "2026-09-02",
+      "username": "user029",
+      "firstName": "Kendall",
+      "lastName": "Johnson",
+      "emailAddress": "user029@example.com",
+      "plan": "Free"
+    },
+    {
+      "customerNumber": "C5030",
+      "date": "2026-10-03",
+      "username": "user030",
+      "firstName": "Harper",
+      "lastName": "Miller",
+      "emailAddress": "user030@example.com",
+      "plan": "Plus"
+    },
+    {
+      "customerNumber": "C5031",
+      "date": "2026-01-04",
+      "username": "user031",
+      "firstName": "Rowan",
+      "lastName": "Price",
+      "emailAddress": "user031@example.com",
+      "plan": "Family"
+    },
+    {
+      "customerNumber": "C5032",
+      "date": "2026-02-05",
+      "username": "user032",
+      "firstName": "Finley",
+      "lastName": "Thomas",
+      "emailAddress": "user032@example.com",
+      "plan": "Professional"
+    },
+    {
+      "customerNumber": "C5033",
+      "date": "2026-03-06",
+      "username": "user033",
+      "firstName": "Emerson",
+      "lastName": "White",
+      "emailAddress": "user033@example.com",
+      "plan": "Free"
+    },
+    {
+      "customerNumber": "C5034",
+      "date": "2026-04-07",
+      "username": "user034",
+      "firstName": "Hayden",
+      "lastName": "Bennett",
+      "emailAddress": "user034@example.com",
+      "plan": "Plus"
+    },
+    {
+      "customerNumber": "C5035",
+      "date": "2026-05-08",
+      "username": "user035",
+      "firstName": "Skyler",
+      "lastName": "Carter",
+      "emailAddress": "user035@example.com",
+      "plan": "Family"
+    },
+    {
+      "customerNumber": "C5036",
+      "date": "2026-06-09",
+      "username": "user036",
+      "firstName": "Robin",
+      "lastName": "Foster",
+      "emailAddress": "user036@example.com",
+      "plan": "Professional"
+    },
+    {
+      "customerNumber": "C5037",
+      "date": "2026-07-10",
+      "username": "user037",
+      "firstName": "Parker",
+      "lastName": "Irwin",
+      "emailAddress": "user037@example.com",
+      "plan": "Free"
+    },
+    {
+      "customerNumber": "C5038",
+      "date": "2026-08-11",
+      "username": "user038",
+      "firstName": "Reese",
+      "lastName": "Lewis",
+      "emailAddress": "user038@example.com",
+      "plan": "Plus"
+    },
+    {
+      "customerNumber": "C5039",
+      "date": "2026-09-12",
+      "username": "user039",
+      "firstName": "Sam",
+      "lastName": "Owens",
+      "emailAddress": "user039@example.com",
+      "plan": "Family"
+    },
+    {
+      "customerNumber": "C5040",
+      "date": "2026-10-13",
+      "username": "user040",
+      "firstName": "Drew",
+      "lastName": "Reed",
+      "emailAddress": "user040@example.com",
+      "plan": "Professional"
+    },
+    {
+      "customerNumber": "C5041",
+      "date": "2026-01-14",
+      "username": "user041",
+      "firstName": "Cameron",
+      "lastName": "Usher",
+      "emailAddress": "user041@example.com",
+      "plan": "Free"
+    },
+    {
+      "customerNumber": "C5042",
+      "date": "2026-02-15",
+      "username": "user042",
+      "firstName": "Jamie",
+      "lastName": "Xu",
+      "emailAddress": "user042@example.com",
+      "plan": "Plus"
+    },
+    {
+      "customerNumber": "C5043",
+      "date": "2026-03-16",
+      "username": "user043",
+      "firstName": "Quinn",
+      "lastName": "Brooks",
+      "emailAddress": "user043@example.com",
+      "plan": "Family"
+    },
+    {
+      "customerNumber": "C5044",
+      "date": "2026-04-17",
+      "username": "user044",
+      "firstName": "Avery",
+      "lastName": "Ellis",
+      "emailAddress": "user044@example.com",
+      "plan": "Professional"
+    },
+    {
+      "customerNumber": "C5045",
+      "date": "2026-05-18",
+      "username": "user045",
+      "firstName": "Riley",
+      "lastName": "Hill",
+      "emailAddress": "user045@example.com",
+      "plan": "Free"
+    },
+    {
+      "customerNumber": "C5046",
+      "date": "2026-06-19",
+      "username": "user046",
+      "firstName": "Casey",
+      "lastName": "Khan",
+      "emailAddress": "user046@example.com",
+      "plan": "Plus"
+    },
+    {
+      "customerNumber": "C5047",
+      "date": "2026-07-20",
+      "username": "user047",
+      "firstName": "Morgan",
+      "lastName": "Nelson",
+      "emailAddress": "user047@example.com",
+      "plan": "Family"
+    },
+    {
+      "customerNumber": "C5048",
+      "date": "2026-08-21",
+      "username": "user048",
+      "firstName": "Taylor",
+      "lastName": "Ross",
+      "emailAddress": "user048@example.com",
+      "plan": "Professional"
+    },
+    {
+      "customerNumber": "C5049",
+      "date": "2026-09-22",
+      "username": "user049",
+      "firstName": "Jordan",
+      "lastName": "Underwood",
+      "emailAddress": "user049@example.com",
+      "plan": "Free"
+    },
+    {
+      "customerNumber": "C5050",
+      "date": "2026-10-23",
+      "username": "user050",
+      "firstName": "Alex",
+      "lastName": "Yamada",
+      "emailAddress": "user050@example.com",
+      "plan": "Plus"
+    }
+  ]
+}
