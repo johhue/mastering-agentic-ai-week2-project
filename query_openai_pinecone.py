@@ -4,13 +4,20 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from dotenv import load_dotenv
+from common import (
+    configure_logging,
+    get_field,
+    get_int_field,
+    get_required_env,
+    load_environment,
+)
 from openai import OpenAI
 from pinecone import Pinecone
 
@@ -21,6 +28,7 @@ DEFAULT_EMBEDDING_DIMENSIONS = 512
 DEFAULT_NAMESPACE = "__default__"
 DEFAULT_TOP_K = 6
 DEFAULT_CONFIDENCE_THRESHOLD = 0.30
+LOGGER = logging.getLogger(__name__)
 
 
 class QueryError(RuntimeError):
@@ -34,8 +42,33 @@ class RetrievalHit:
     score: float
 
 
+@dataclass(frozen=True)
+class TokenUsage:
+    label: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+
+
+@dataclass(frozen=True)
+class EmbeddingResult:
+    embedding: list[float]
+    usage: TokenUsage
+
+
+@dataclass(frozen=True)
+class AnswerResult:
+    answer: str
+    usage: TokenUsage
+
+
 def parse_args() -> argparse.Namespace:
-    load_dotenv(override=True)
+    """Parse CLI options and load .env-backed defaults.
+
+    Called by main before credentials, Pinecone settings, and OpenAI model
+    settings are validated.
+    """
+    load_environment()
 
     parser = argparse.ArgumentParser(
         description="Ask a question using OpenAI plus RAG context from Pinecone."
@@ -98,29 +131,78 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print retrieved sources and scores after the answer.",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging for retrieval and OpenAI request details.",
+    )
     return parser.parse_args()
 
 
 def get_question(args: argparse.Namespace) -> str:
+    """Return the question from CLI arguments or an interactive prompt.
+
+    Called by main after parse_args. Raises QueryError when no question is
+    available from either source.
+    """
     question = " ".join(args.question).strip()
     if not question:
         question = input("Question: ").strip()
     if not question:
         raise QueryError("A question is required.")
+    LOGGER.debug("Question captured: chars=%s words=%s", len(question), len(question.split()))
     return question
 
 
-def get_required_env(name: str) -> str:
-    value = os.getenv(name)
-    if not value:
-        raise QueryError(f"Missing {name}. Add it to .env.")
-    return value
+def usage_from_embedding_response(response: Any) -> TokenUsage:
+    """Extract token usage from an OpenAI embedding response.
+
+    Called by create_query_embedding after the embeddings endpoint returns.
+    Returns zeroed usage when the SDK response does not include usage data.
+    """
+    usage = get_field(response, "usage", None)
+    if usage is None:
+        LOGGER.debug("Embedding response did not include usage metadata.")
+        return TokenUsage(label="Embedding")
+
+    prompt_tokens = get_int_field(usage, "prompt_tokens")
+    total_tokens = get_int_field(usage, "total_tokens") or prompt_tokens
+    LOGGER.debug(
+        "Parsed embedding usage: prompt_tokens=%s total_tokens=%s",
+        prompt_tokens,
+        total_tokens,
+    )
+    return TokenUsage(
+        label="Embedding",
+        input_tokens=prompt_tokens,
+        total_tokens=total_tokens,
+    )
 
 
-def get_field(value: Any, field_name: str, default: Any = None) -> Any:
-    if isinstance(value, dict):
-        return value.get(field_name, default)
-    return getattr(value, field_name, default)
+def usage_from_chat_response(response: Any) -> TokenUsage:
+    """Extract prompt, completion, and total tokens from a chat response.
+
+    Called by generate_answer after the Chat Completions response returns.
+    Returns zeroed usage when the SDK response does not include usage data.
+    """
+    usage = get_field(response, "usage", None)
+    if usage is None:
+        LOGGER.debug("Chat completion response did not include usage metadata.")
+        return TokenUsage(label="Chat completion")
+
+    token_usage = TokenUsage(
+        label="Chat completion",
+        input_tokens=get_int_field(usage, "prompt_tokens"),
+        output_tokens=get_int_field(usage, "completion_tokens"),
+        total_tokens=get_int_field(usage, "total_tokens"),
+    )
+    LOGGER.debug(
+        "Parsed chat usage: prompt_tokens=%s completion_tokens=%s total_tokens=%s",
+        token_usage.input_tokens,
+        token_usage.output_tokens,
+        token_usage.total_tokens,
+    )
+    return token_usage
 
 
 def create_query_embedding(
@@ -128,14 +210,33 @@ def create_query_embedding(
     question: str,
     model: str,
     dimensions: int,
-) -> list[float]:
+) -> EmbeddingResult:
+    """Create an embedding vector for the user's question.
+
+    Called by main before querying Pinecone. This function also calls
+    usage_from_embedding_response so the final CLI summary can include embedding
+    token usage.
+    """
+    LOGGER.debug(
+        "Creating embedding with model=%s dimensions=%s question_chars=%s",
+        model,
+        dimensions,
+        len(question),
+    )
     response = client.embeddings.create(
         model=model,
         input=question,
         dimensions=dimensions,
         encoding_format="float",
     )
-    return response.data[0].embedding
+    embedding = response.data[0].embedding
+    usage = usage_from_embedding_response(response)
+    LOGGER.debug(
+        "Embedding created: vector_dimensions=%s total_tokens=%s",
+        len(embedding),
+        usage.total_tokens,
+    )
+    return EmbeddingResult(embedding=embedding, usage=usage)
 
 
 def query_pinecone(
@@ -144,6 +245,18 @@ def query_pinecone(
     namespace: str,
     top_k: int,
 ) -> list[RetrievalHit]:
+    """Retrieve matching Pinecone records for an embedding vector.
+
+    Called by main after create_query_embedding. Converts Pinecone response
+    objects or mappings into RetrievalHit instances used by refusal checks and
+    answer generation.
+    """
+    LOGGER.debug(
+        "Querying Pinecone namespace=%s top_k=%s embedding_dimensions=%s",
+        namespace,
+        top_k,
+        len(embedding),
+    )
     results = index.query(
         vector=list(embedding),
         top_k=top_k,
@@ -157,20 +270,41 @@ def query_pinecone(
         metadata = get_field(match, "metadata", {}) or {}
         text = str(metadata.get("text") or "").strip()
         if not text:
+            LOGGER.debug("Skipping Pinecone match without text metadata.")
             continue
 
         hits.append(
             RetrievalHit(
-                source=str(metadata.get("source") or metadata.get("source_name") or "Pinecone"),
+                source=str(
+                    metadata.get("source") or metadata.get("source_name") or "Pinecone"
+                ),
                 text=text,
                 score=float(get_field(match, "score", 0.0) or 0.0),
             )
         )
 
+    for index, hit in enumerate(hits, 1):
+        LOGGER.debug(
+            "Pinecone hit %s: source=%s score=%.3f text_chars=%s",
+            index,
+            hit.source,
+            hit.score,
+            len(hit.text),
+        )
+    LOGGER.debug(
+        "Pinecone returned %s usable hits; top_score=%s",
+        len(hits),
+        f"{hits[0].score:.3f}" if hits else "none",
+    )
     return hits
 
 
 def build_context(hits: Sequence[RetrievalHit]) -> str:
+    """Build numbered RAG context blocks from retrieved hits.
+
+    Called by generate_answer to provide source text and relevance scores to the
+    chat model.
+    """
     blocks = []
     for index, hit in enumerate(hits, 1):
         blocks.append(
@@ -178,7 +312,9 @@ def build_context(hits: Sequence[RetrievalHit]) -> str:
             f"Relevance score: {hit.score:.3f}\n"
             f"{hit.text}"
         )
-    return "\n\n".join(blocks)
+    context = "\n\n".join(blocks)
+    LOGGER.debug("Built RAG context: hit_count=%s context_chars=%s", len(hits), len(context))
+    return context
 
 
 def should_refuse_answer(
@@ -186,16 +322,34 @@ def should_refuse_answer(
     confidence_threshold: float,
     allow_hallucinations: bool,
 ) -> tuple[bool, str]:
+    """Decide whether the script should answer or escalate.
+
+    Called by main after query_pinecone. Returns a refusal flag and a human
+    readable reason based on retrieval availability, confidence, and the
+    --allow-hallucinations option.
+    """
     if allow_hallucinations:
+        LOGGER.debug("Refusal check bypassed because allow_hallucinations=True.")
         return False, ""
     if not hits:
+        LOGGER.debug("Refusal check failed: no Pinecone hits.")
         return True, "No Pinecone RAG context was retrieved."
     if hits[0].score < confidence_threshold:
+        LOGGER.debug(
+            "Refusal check failed: top_score=%.3f threshold=%.3f",
+            hits[0].score,
+            confidence_threshold,
+        )
         return (
             True,
             f"Top retrieval score {hits[0].score:.3f} is below threshold "
             f"{confidence_threshold:.3f}.",
         )
+    LOGGER.debug(
+        "Refusal check passed: top_score=%.3f threshold=%.3f",
+        hits[0].score,
+        confidence_threshold,
+    )
     return False, ""
 
 
@@ -205,7 +359,13 @@ def generate_answer(
     question: str,
     hits: Sequence[RetrievalHit],
     allow_hallucinations: bool,
-) -> str:
+) -> AnswerResult:
+    """Generate a final answer from retrieved Pinecone context.
+
+    Called by main when should_refuse_answer allows the response. This function
+    calls build_context and usage_from_chat_response, returning both answer text
+    and token usage for the final summary.
+    """
     context = build_context(hits) or "No Pinecone context was retrieved."
     if allow_hallucinations:
         system_prompt = (
@@ -222,6 +382,12 @@ def generate_answer(
             "human support specialist. Cite source numbers like [1]."
         )
 
+    LOGGER.debug(
+        "Generating answer with model=%s context_chars=%s hit_count=%s",
+        model,
+        len(context),
+        len(hits),
+    )
     response = client.chat.completions.create(
         model=model,
         temperature=0.2 if allow_hallucinations else 0.0,
@@ -233,10 +399,23 @@ def generate_answer(
             },
         ],
     )
-    return response.choices[0].message.content or ""
+    answer = response.choices[0].message.content or ""
+    usage = usage_from_chat_response(response)
+    LOGGER.debug(
+        "Answer generated: answer_chars=%s total_tokens=%s",
+        len(answer),
+        usage.total_tokens,
+    )
+    return AnswerResult(answer=answer, usage=usage)
 
 
 def print_sources(hits: Sequence[RetrievalHit]) -> None:
+    """Print retrieved source names and scores for the CLI user.
+
+    Called by main when --show-sources is provided, both for answered and
+    refused queries.
+    """
+    LOGGER.debug("Printing sources: hit_count=%s", len(hits))
     print("\nSources")
     if not hits:
         print("- No sources retrieved.")
@@ -245,20 +424,80 @@ def print_sources(hits: Sequence[RetrievalHit]) -> None:
         print(f"- [{index}] {hit.source} (score: {hit.score:.3f})")
 
 
+def print_token_summary(usages: Sequence[TokenUsage]) -> None:
+    """Print per-request and total token usage for the CLI run.
+
+    Called by main at the end of both answered and refused query paths.
+    """
+    total_input_tokens = sum(usage.input_tokens for usage in usages)
+    total_output_tokens = sum(usage.output_tokens for usage in usages)
+    total_tokens = sum(usage.total_tokens for usage in usages)
+    LOGGER.debug(
+        "Printing token summary: entries=%s input=%s output=%s total=%s",
+        len(usages),
+        total_input_tokens,
+        total_output_tokens,
+        total_tokens,
+    )
+
+    print("\nToken usage")
+    for usage in usages:
+        print(
+            f"- {usage.label}: {usage.total_tokens:,} total "
+            f"({usage.input_tokens:,} input, {usage.output_tokens:,} output)"
+        )
+    print(
+        f"- Total: {total_tokens:,} total "
+        f"({total_input_tokens:,} input, {total_output_tokens:,} output)"
+    )
+
+
 def main() -> int:
+    """Run the OpenAI plus Pinecone RAG query CLI.
+
+    Called by the module entrypoint when this script is executed directly.
+    Coordinates parsing, logging, credentials, embedding creation, Pinecone
+    retrieval, refusal handling, answer generation, and token reporting.
+    """
     args = parse_args()
+    configure_logging(debug=args.debug, level=logging.WARNING)
+    LOGGER.debug(
+        "Parsed arguments: index_set=%s namespace=%s chat_model=%s embedding_model=%s "
+        "embedding_dimensions=%s top_k=%s confidence_threshold=%.3f show_sources=%s "
+        "allow_hallucinations=%s",
+        bool(args.index),
+        args.namespace,
+        args.chat_model,
+        args.embedding_model,
+        args.embedding_dimensions,
+        args.top_k,
+        args.confidence_threshold,
+        args.show_sources,
+        args.allow_hallucinations,
+    )
     question = get_question(args)
-    openai_api_key = get_required_env("OPENAI_API_KEY")
-    pinecone_api_key = get_required_env("PINECONE_API_KEY")
+    openai_api_key = get_required_env("OPENAI_API_KEY", QueryError)
+    pinecone_api_key = get_required_env("PINECONE_API_KEY", QueryError)
     if not args.index:
         raise QueryError("Missing PINECONE_INDEX_NAME. Add it to .env or pass --index.")
     if args.top_k <= 0:
         raise QueryError("--top-k must be greater than zero.")
 
+    LOGGER.debug("Validated required environment variables.")
     openai_client = OpenAI(api_key=openai_api_key)
+    LOGGER.debug("Created OpenAI client.")
     pinecone_index = Pinecone(api_key=pinecone_api_key).Index(args.index)
+    LOGGER.debug("Created Pinecone index client for index=%s.", args.index)
 
-    embedding = create_query_embedding(
+    LOGGER.debug(
+        "Starting RAG query: chat_model=%s embedding_model=%s namespace=%s top_k=%s",
+        args.chat_model,
+        args.embedding_model,
+        args.namespace,
+        args.top_k,
+    )
+
+    embedding_result = create_query_embedding(
         client=openai_client,
         question=question,
         model=args.embedding_model,
@@ -266,35 +505,42 @@ def main() -> int:
     )
     hits = query_pinecone(
         index=pinecone_index,
-        embedding=embedding,
+        embedding=embedding_result.embedding,
         namespace=args.namespace,
         top_k=args.top_k,
     )
+    usages = [embedding_result.usage]
 
     refuse, reason = should_refuse_answer(
         hits=hits,
         confidence_threshold=args.confidence_threshold,
         allow_hallucinations=args.allow_hallucinations,
     )
+    LOGGER.debug("Refusal decision: refuse=%s reason=%s", refuse, reason or "none")
     if refuse:
         print("I do not have enough reliable RAG context to answer without guessing.")
         print(f"Reason: {reason}")
         print("Escalation: Please route this question to a human support specialist.")
         if args.show_sources:
             print_sources(hits)
+        print_token_summary(usages)
+        LOGGER.debug("Finished refused query path.")
         return 0
 
-    answer = generate_answer(
+    answer_result = generate_answer(
         client=openai_client,
         model=args.chat_model,
         question=question,
         hits=hits,
         allow_hallucinations=args.allow_hallucinations,
     )
-    print(answer)
+    usages.append(answer_result.usage)
+    print(answer_result.answer)
 
     if args.show_sources:
         print_sources(hits)
+    print_token_summary(usages)
+    LOGGER.debug("Finished answered query path.")
     return 0
 
 

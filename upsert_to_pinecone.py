@@ -16,14 +16,15 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import logging
 import os
-import sys
 import uuid
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any
 
+from common import batched, configure_logging, load_environment
 from openai import OpenAI
 from pinecone import Pinecone
 
@@ -32,7 +33,7 @@ DEFAULT_INPUT_GLOB = "RemindMe*"
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 DEFAULT_EMBEDDING_DIMENSIONS = 512
 DEFAULT_NAMESPACE = "__default__"
-T = TypeVar("T")
+LOGGER = logging.getLogger(__name__)
 TEXT_SUFFIXES = {
     ".csv",
     ".html",
@@ -63,35 +64,22 @@ class DocumentChunk:
 
     @property
     def vector_id(self) -> str:
+        """Return a stable vector ID derived from source path, index, and text.
+
+        Called by build_vectors when constructing Pinecone upsert payloads.
+        """
         digest = hashlib.sha256(
             f"{self.source_path}:{self.chunk_index}:{self.text}".encode("utf-8")
         ).hexdigest()
         return str(uuid.uuid5(uuid.NAMESPACE_URL, digest))
 
 
-def load_dotenv(path: Path) -> None:
-    """Load simple KEY=VALUE pairs from a .env file into os.environ."""
-
-    if not path.exists():
-        return
-
-    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            print(f"Skipping malformed .env line {line_number}", file=sys.stderr)
-            continue
-
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip().strip("'\"")
-        if key and key not in os.environ:
-            os.environ[key] = value
-
-
 def parse_args() -> argparse.Namespace:
-    load_dotenv(Path(".env"))
+    """Parse CLI options and load .env-backed defaults.
+
+    Called by main before directories are scanned or credentials are validated.
+    """
+    load_environment()
 
     parser = argparse.ArgumentParser(
         description="Embed files in RemindMe* directories and upsert them to Pinecone."
@@ -137,11 +125,21 @@ def parse_args() -> argparse.Namespace:
 
 
 def find_input_dirs(input_glob: str) -> list[Path]:
+    """Return RemindMe directories matching the configured glob.
+
+    Called by main to identify the local corpus roots that should be chunked and
+    embedded.
+    """
     dirs = [path for path in sorted(Path(".").glob(input_glob)) if path.is_dir()]
     return [path for path in dirs if path.name.startswith("RemindMe")]
 
 
 def iter_text_files(input_dirs: Sequence[Path]) -> Iterator[Path]:
+    """Yield supported text files from input directories recursively.
+
+    Called by load_chunks to discover files that can be read into document
+    chunks.
+    """
     for input_dir in input_dirs:
         for path in sorted(input_dir.rglob("*")):
             if path.is_file() and path.suffix.lower() in TEXT_SUFFIXES:
@@ -149,14 +147,23 @@ def iter_text_files(input_dirs: Sequence[Path]) -> Iterator[Path]:
 
 
 def read_text(path: Path) -> str:
+    """Read one text file, returning an empty string if it cannot be read.
+
+    Called by load_chunks for each path from iter_text_files.
+    """
     try:
         return path.read_text(encoding="utf-8", errors="ignore").strip()
     except OSError as exc:
-        print(f"Skipping unreadable file {path}: {exc}", file=sys.stderr)
+        LOGGER.warning("Skipping unreadable file %s: %s", path, exc)
         return ""
 
 
 def split_text(text: str, chunk_size: int, chunk_overlap: int) -> Iterator[str]:
+    """Split text into overlapping chunks suitable for embedding.
+
+    Called by load_chunks after read_text returns content. Validates chunk
+    sizing so callers fail before sending malformed batches to OpenAI.
+    """
     if chunk_size <= 0:
         raise ValueError("chunk-size must be greater than zero")
     if chunk_overlap < 0:
@@ -180,6 +187,11 @@ def load_chunks(
     chunk_size: int,
     chunk_overlap: int,
 ) -> list[DocumentChunk]:
+    """Load, split, and label all supported files as DocumentChunk objects.
+
+    Called by main before dry-run handling or embedding. This function calls
+    iter_text_files, read_text, and split_text.
+    """
     chunks: list[DocumentChunk] = []
     for path in iter_text_files(input_dirs):
         text = read_text(path)
@@ -190,19 +202,17 @@ def load_chunks(
     return chunks
 
 
-def batched(items: Sequence[T], batch_size: int) -> Iterator[Sequence[T]]:
-    if batch_size <= 0:
-        raise ValueError("batch size must be greater than zero")
-    for start in range(0, len(items), batch_size):
-        yield items[start : start + batch_size]
-
-
 def embed_texts(
     client: OpenAI,
     texts: Sequence[str],
     model: str,
     dimensions: int,
 ) -> list[list[float]]:
+    """Create OpenAI embeddings for a batch of text chunks.
+
+    Called by upsert_chunks for each embedding batch. Raises UpsertError with
+    context when the OpenAI embedding request fails.
+    """
     try:
         response = client.embeddings.create(
             model=model,
@@ -220,6 +230,11 @@ def build_vectors(
     chunks: Sequence[DocumentChunk],
     embeddings: Sequence[Sequence[float]],
 ) -> list[dict[str, Any]]:
+    """Build Pinecone vector dictionaries from chunks and embeddings.
+
+    Called by upsert_chunks after embed_texts returns. The output contains
+    vector IDs, embedding values, and metadata used later by query scripts.
+    """
     vectors: list[dict[str, Any]] = []
     for chunk, embedding in zip(chunks, embeddings, strict=True):
         vectors.append(
@@ -240,6 +255,11 @@ def build_vectors(
 
 
 def validate_environment(args: argparse.Namespace) -> tuple[str, str, str]:
+    """Validate required API credentials and target Pinecone index settings.
+
+    Called by main after dry-run handling and before creating OpenAI or Pinecone
+    clients.
+    """
     openai_api_key = os.getenv("OPENAI_API_KEY")
     pinecone_api_key = os.getenv("PINECONE_API_KEY")
 
@@ -267,6 +287,12 @@ def upsert_chunks(
     embedding_batch_size: int,
     upsert_batch_size: int,
 ) -> int:
+    """Embed document chunks and upsert them into Pinecone.
+
+    Called by main after environment validation. This function calls embed_texts,
+    build_vectors, and the shared batched helper to control OpenAI and Pinecone
+    request sizes.
+    """
     index = pinecone_client.Index(index_name)
     uploaded = 0
 
@@ -282,12 +308,19 @@ def upsert_chunks(
         for vector_batch in batched(vectors, upsert_batch_size):
             index.upsert(vectors=list(vector_batch), namespace=namespace)
             uploaded += len(vector_batch)
-            print(f"Upserted {uploaded}/{len(chunks)} chunks")
+            LOGGER.info("Upserted %s/%s chunks", uploaded, len(chunks))
 
     return uploaded
 
 
 def main() -> int:
+    """Run the file-to-Pinecone upsert CLI and return a process exit code.
+
+    Called by the module entrypoint when this script is executed directly.
+    Coordinates logging, argument parsing, corpus loading, dry-run handling,
+    credential validation, embedding, and Pinecone upsert.
+    """
+    configure_logging()
     args = parse_args()
 
     input_dirs = find_input_dirs(args.input_glob)
@@ -296,12 +329,13 @@ def main() -> int:
 
     chunks = load_chunks(input_dirs, args.chunk_size, args.chunk_overlap)
     if not chunks:
-        print("No supported text files found.")
+        LOGGER.info("No supported text files found.")
         return 0
 
-    print(
-        f"Loaded {len(chunks)} chunks from "
-        f"{', '.join(str(path) for path in input_dirs)}"
+    LOGGER.info(
+        "Loaded %s chunks from %s",
+        len(chunks),
+        ", ".join(str(path) for path in input_dirs),
     )
     if args.dry_run:
         return 0
@@ -319,9 +353,11 @@ def main() -> int:
         upsert_batch_size=args.upsert_batch_size,
     )
 
-    print(
-        f"Done. Upserted {uploaded} chunks to index '{index_name}' "
-        f"in namespace '{args.namespace}'."
+    LOGGER.info(
+        "Done. Upserted %s chunks to index '%s' in namespace '%s'.",
+        uploaded,
+        index_name,
+        args.namespace,
     )
     return 0
 
@@ -330,5 +366,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except (UpsertError, ValueError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        LOGGER.error("Error: %s", exc)
         raise SystemExit(1) from exc

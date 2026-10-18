@@ -8,20 +8,19 @@ namespace, fetches their metadata, and summarizes distinct source files.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
-import sys
-from collections import defaultdict
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
-from pinecone import Pinecone
+from common import batched, configure_logging, get_field, get_required_env, load_environment
+from pinecone import Pinecone, PineconeException
 
 
 DEFAULT_NAMESPACE = "__default__"
 DEFAULT_BATCH_SIZE = 100
+LOGGER = logging.getLogger(__name__)
 
 
 class QueryPineconeError(RuntimeError):
@@ -37,8 +36,30 @@ class SourceSummary:
     chunk_indexes: set[int] = field(default_factory=set)
 
 
+def create_pinecone_index(api_key: str, index_name: str) -> Any:
+    """Create a Pinecone index handle and normalize connection failures.
+
+    Called by main after validating the Pinecone API key and index name.
+    """
+    try:
+        pinecone_client = Pinecone(api_key=api_key)
+        return pinecone_client.Index(index_name)
+    except PineconeException as exc:
+        raise QueryPineconeError(
+            f"Could not connect to Pinecone index '{index_name}': {exc}"
+        ) from exc
+    except Exception as exc:
+        raise QueryPineconeError(
+            f"Unexpected error while creating Pinecone index '{index_name}': {exc}"
+        ) from exc
+
+
 def parse_args() -> argparse.Namespace:
-    load_dotenv(override=True)
+    """Load .env values and parse command-line arguments.
+
+    Called by main to determine the target index, namespace, and output options.
+    """
+    load_environment()
 
     parser = argparse.ArgumentParser(
         description="List source files represented by vectors in a Pinecone index."
@@ -72,27 +93,11 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def batched(items: Sequence[str], batch_size: int) -> Iterator[Sequence[str]]:
-    if batch_size <= 0:
-        raise ValueError("batch-size must be greater than zero")
-    for start in range(0, len(items), batch_size):
-        yield items[start : start + batch_size]
-
-
-def get_required_env(name: str) -> str:
-    value = os.getenv(name)
-    if not value:
-        raise QueryPineconeError(f"Missing {name}. Add it to .env.")
-    return value
-
-
-def get_field(value: Any, field_name: str, default: Any = None) -> Any:
-    if isinstance(value, dict):
-        return value.get(field_name, default)
-    return getattr(value, field_name, default)
-
-
 def flatten_list_response(response: Any) -> Iterator[str]:
+    """Flatten Pinecone list response pages into vector ID strings.
+
+    Called by list_vector_ids and recursively by itself for nested response data.
+    """
     if response is None:
         return
 
@@ -126,21 +131,43 @@ def flatten_list_response(response: Any) -> Iterator[str]:
 
 
 def list_vector_ids(index: Any, namespace: str) -> list[str]:
+    """List unique vector IDs in a Pinecone namespace.
+
+    Called by summarize_sources before fetching metadata for each vector ID.
+    """
     ids: list[str] = []
 
     try:
         for page in index.list(namespace=namespace):
             ids.extend(flatten_list_response(page))
-    except Exception as exc:
+    except PineconeException as exc:
         raise QueryPineconeError(
             f"Could not list vectors in namespace '{namespace}': {exc}"
+        ) from exc
+    except Exception as exc:
+        raise QueryPineconeError(
+            f"Unexpected error while listing vectors in namespace '{namespace}': {exc}"
         ) from exc
 
     return sorted(set(ids))
 
 
 def fetch_metadata(index: Any, ids: Sequence[str], namespace: str) -> dict[str, dict[str, Any]]:
-    response = index.fetch(ids=list(ids), namespace=namespace)
+    """Fetch metadata for vector IDs from a Pinecone namespace.
+
+    Called by summarize_sources for each batch of vector IDs.
+    """
+    try:
+        response = index.fetch(ids=list(ids), namespace=namespace)
+    except PineconeException as exc:
+        raise QueryPineconeError(
+            f"Could not fetch metadata for {len(ids)} vectors in namespace '{namespace}': {exc}"
+        ) from exc
+    except Exception as exc:
+        raise QueryPineconeError(
+            f"Unexpected error while fetching metadata in namespace '{namespace}': {exc}"
+        ) from exc
+
     vectors = get_field(response, "vectors", {}) or {}
 
     metadata_by_id: dict[str, dict[str, Any]] = {}
@@ -155,6 +182,10 @@ def summarize_sources(
     namespace: str,
     batch_size: int,
 ) -> tuple[list[SourceSummary], int]:
+    """Build per-source summaries from vectors stored in a namespace.
+
+    Called by main once for each namespace selected for inspection.
+    """
     vector_ids = list_vector_ids(index, namespace)
     summaries: dict[str, SourceSummary] = {}
 
@@ -180,7 +211,19 @@ def summarize_sources(
 
 
 def list_namespaces(index: Any) -> list[str]:
-    stats = index.describe_index_stats()
+    """Return namespace names reported by Pinecone index stats.
+
+    Called by main when the --all-namespaces option is enabled.
+    """
+    try:
+        stats = index.describe_index_stats()
+    except PineconeException as exc:
+        raise QueryPineconeError(f"Could not list Pinecone namespaces: {exc}") from exc
+    except Exception as exc:
+        raise QueryPineconeError(
+            f"Unexpected error while listing Pinecone namespaces: {exc}"
+        ) from exc
+
     namespaces = get_field(stats, "namespaces", {}) or {}
     if isinstance(namespaces, dict):
         return sorted(str(name) for name in namespaces.keys())
@@ -193,58 +236,69 @@ def print_summary(
     vector_count: int,
     show_chunks: bool,
 ) -> None:
-    print(f"\nNamespace: {namespace}")
-    print(f"Vectors: {vector_count}")
-    print(f"Files: {len(summaries)}")
+    """Log a human-readable summary for one namespace.
+
+    Called by main after summarize_sources returns source and vector counts.
+    """
+    LOGGER.info("\nNamespace: %s", namespace)
+    LOGGER.info("Vectors: %s", vector_count)
+    LOGGER.info("Files: %s", len(summaries))
 
     if not summaries:
-        print("No vectors found.")
+        LOGGER.info("No vectors found.")
         return
 
     for index, summary in enumerate(summaries, 1):
         chunk_count = len(summary.vector_ids)
         chunk_label = "chunk" if chunk_count == 1 else "chunks"
-        print(f"{index:>2}. {summary.source} ({chunk_count} {chunk_label})")
+        LOGGER.info("%2d. %s (%s %s)", index, summary.source, chunk_count, chunk_label)
 
         if show_chunks:
             chunk_indexes = sorted(summary.chunk_indexes)
             if chunk_indexes:
-                print(f"    chunk indexes: {chunk_indexes}")
+                LOGGER.info("    chunk indexes: %s", chunk_indexes)
             for vector_id in summary.vector_ids:
-                print(f"    vector: {vector_id}")
+                LOGGER.info("    vector: %s", vector_id)
 
 
 def main() -> int:
+    """Run the query CLI and return the process exit code.
+
+    Called by the module entrypoint when this script is executed directly.
+    """
+    configure_logging()
     args = parse_args()
-    pinecone_api_key = get_required_env("PINECONE_API_KEY")
+    pinecone_api_key = get_required_env("PINECONE_API_KEY", QueryPineconeError)
     if not args.index:
         raise QueryPineconeError("Missing PINECONE_INDEX_NAME. Add it to .env.")
 
-    pinecone_client = Pinecone(api_key=pinecone_api_key)
-    index = pinecone_client.Index(args.index)
+    index = create_pinecone_index(pinecone_api_key, args.index)
 
     namespaces = list_namespaces(index) if args.all_namespaces else [args.namespace]
     if not namespaces:
-        print("No namespaces found.")
+        LOGGER.info("No namespaces found.")
         return 0
 
     total_vectors = 0
     total_files = 0
-    print(f"Index: {args.index}")
+    LOGGER.info("Index: %s", args.index)
     for namespace in namespaces:
         summaries, vector_count = summarize_sources(index, namespace, args.batch_size)
         total_vectors += vector_count
         total_files += len(summaries)
         print_summary(namespace, summaries, vector_count, args.show_chunks)
 
-    print(f"\nTotal vectors: {total_vectors}")
-    print(f"Total file entries: {total_files}")
+    LOGGER.info("\nTotal vectors: %s", total_vectors)
+    LOGGER.info("Total file entries: %s", total_files)
     return 0
 
 
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
+    except KeyboardInterrupt:
+        LOGGER.error("Interrupted.")
+        raise SystemExit(130) from None
     except (QueryPineconeError, ValueError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        LOGGER.error("Error: %s", exc)
         raise SystemExit(1) from exc

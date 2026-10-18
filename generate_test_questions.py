@@ -5,15 +5,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import random
 import re
-import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from dotenv import load_dotenv
+from common import configure_logging, get_required_env, load_environment
 from openai import OpenAI
 
 
@@ -24,6 +24,7 @@ DEFAULT_CONTEXT_BUDGET = 18000
 DEFAULT_RANDOM_SEED = None
 TEXT_SUFFIXES = {".csv", ".html", ".json", ".md", ".rst", ".txt", ".yaml", ".yml"}
 WHITESPACE_RE = re.compile(r"\s+")
+LOGGER = logging.getLogger(__name__)
 
 
 class QuestionGenerationError(RuntimeError):
@@ -37,7 +38,11 @@ class SourceDocument:
 
 
 def parse_args() -> argparse.Namespace:
-    load_dotenv(override=True)
+    """Parse CLI options and load environment defaults.
+
+    Called by main before any files are read or OpenAI requests are made.
+    """
+    load_environment()
 
     parser = argparse.ArgumentParser(
         description="Generate random RAG test questions from RemindMe* files."
@@ -75,6 +80,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def iter_remindme_files() -> Iterable[Path]:
+    """Yield supported text-like files under local RemindMe directories.
+
+    Called by load_sources to discover source material for question generation.
+    """
     for directory in sorted(Path(".").glob("RemindMe*")):
         if not directory.is_dir():
             continue
@@ -84,10 +93,20 @@ def iter_remindme_files() -> Iterable[Path]:
 
 
 def compact_text(text: str) -> str:
+    """Normalize whitespace in source text to a single-line excerpt form.
+
+    Called by read_source after loading raw file content.
+    """
     return WHITESPACE_RE.sub(" ", text).strip()
 
 
 def read_source(path: Path) -> SourceDocument:
+    """Read one source file and return compacted text with its path.
+
+    Called by load_sources for each path from iter_remindme_files. JSON files are
+    pretty-printed first when they contain valid JSON so their structure is
+    preserved in the sampled context.
+    """
     raw_text = path.read_text(encoding="utf-8", errors="ignore").strip()
     if path.suffix.lower() == ".json":
         try:
@@ -98,6 +117,11 @@ def read_source(path: Path) -> SourceDocument:
 
 
 def load_sources() -> list[SourceDocument]:
+    """Load all non-empty RemindMe source documents.
+
+    Called by main before source sampling. This function calls iter_remindme_files
+    and read_source, then filters out empty documents.
+    """
     sources = []
     for path in iter_remindme_files():
         source = read_source(path)
@@ -111,6 +135,11 @@ def sample_context(
     context_budget: int,
     rng: random.Random,
 ) -> str:
+    """Build a randomized context sample within an approximate character budget.
+
+    Called by main after load_sources. The sampled context is passed to
+    generate_questions as the source material for OpenAI.
+    """
     if context_budget <= 0:
         raise QuestionGenerationError("--context-budget must be greater than zero.")
 
@@ -139,14 +168,13 @@ def sample_context(
     return "\n\n".join(blocks)
 
 
-def get_required_env(name: str) -> str:
-    value = os.getenv(name)
-    if not value:
-        raise QuestionGenerationError(f"Missing {name}. Add it to .env.")
-    return value
-
-
 def extract_questions(response_text: str) -> list[str]:
+    """Parse OpenAI JSON output into a clean list of question strings.
+
+    Called by generate_questions after receiving the chat completion response.
+    Raises QuestionGenerationError when the response is not valid JSON or does
+    not contain a questions list.
+    """
     try:
         data = json.loads(response_text)
     except json.JSONDecodeError as exc:
@@ -177,6 +205,11 @@ def generate_questions(
     context: str,
     count: int,
 ) -> list[str]:
+    """Ask OpenAI to generate the requested number of test questions.
+
+    Called by main after sampling source context. This function calls
+    extract_questions to validate and normalize the model response.
+    """
     if count <= 0:
         raise QuestionGenerationError("--count must be greater than zero.")
 
@@ -217,6 +250,10 @@ def generate_questions(
 
 
 def write_markdown(path: Path, questions: Sequence[str], model: str) -> None:
+    """Write generated questions to a Markdown file.
+
+    Called by main after generate_questions returns the final question list.
+    """
     lines = [
         "# 20 Test Questions",
         "",
@@ -232,6 +269,13 @@ def write_markdown(path: Path, questions: Sequence[str], model: str) -> None:
 
 
 def main() -> int:
+    """Run the question-generation CLI and return a process exit code.
+
+    Called by the module entrypoint when this script is executed directly.
+    Orchestrates argument parsing, source loading, context sampling, OpenAI
+    generation, and Markdown output.
+    """
+    configure_logging()
     args = parse_args()
     sources = load_sources()
     if not sources:
@@ -239,7 +283,7 @@ def main() -> int:
 
     rng = random.Random(args.seed)
     context = sample_context(sources, args.context_budget, rng)
-    openai_api_key = get_required_env("OPENAI_API_KEY")
+    openai_api_key = get_required_env("OPENAI_API_KEY", QuestionGenerationError)
     questions = generate_questions(
         client=OpenAI(api_key=openai_api_key),
         model=args.model,
@@ -247,7 +291,7 @@ def main() -> int:
         count=args.count,
     )
     write_markdown(args.output, questions, args.model)
-    print(f"Wrote {len(questions)} questions to {args.output}")
+    LOGGER.info("Wrote %s questions to %s", len(questions), args.output)
     return 0
 
 
@@ -255,5 +299,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except QuestionGenerationError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        LOGGER.error("Error: %s", exc)
         raise SystemExit(1) from exc

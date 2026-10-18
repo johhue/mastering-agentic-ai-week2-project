@@ -16,12 +16,12 @@ from pathlib import Path
 from typing import Any
 
 import streamlit as st
-from dotenv import load_dotenv
+from common import load_environment
 from openai import OpenAI
 from pinecone import Pinecone
 
 
-load_dotenv(override=True)
+load_environment()
 
 APP_TITLE = "RemindMe Support"
 DEFAULT_CHAT_MODEL = "gpt-4.1-mini"
@@ -45,6 +45,12 @@ class CorpusChunk:
 
     @property
     def vector_id(self) -> str:
+        """Return a stable ID for this local corpus chunk.
+
+        Called by keyword_search when producing local keyword hits and by
+        merge_hits when combining local keyword results with Pinecone semantic
+        results.
+        """
         digest = hashlib.sha256(
             f"{self.source_path}:{self.chunk_index}:{self.text}".encode("utf-8")
         ).hexdigest()
@@ -62,10 +68,20 @@ class RetrievalHit:
 
 
 def tokenize(text: str) -> list[str]:
+    """Split text into normalized keyword tokens.
+
+    Called by build_keyword_index for corpus chunks and by keyword_search for
+    incoming user queries.
+    """
     return [token.lower() for token in TOKEN_RE.findall(text)]
 
 
 def iter_support_files() -> Iterable[Path]:
+    """Yield supported local support files from RemindMe directories.
+
+    Called by load_corpus to discover files that should be chunked for local
+    keyword retrieval.
+    """
     for directory in sorted(Path(".").glob("RemindMe*")):
         if not directory.is_dir():
             continue
@@ -75,6 +91,10 @@ def iter_support_files() -> Iterable[Path]:
 
 
 def read_source(path: Path) -> str:
+    """Read a support file and normalize JSON files for readable context.
+
+    Called by load_corpus for each path from iter_support_files.
+    """
     raw_text = path.read_text(encoding="utf-8", errors="ignore").strip()
     if path.suffix.lower() != ".json":
         return raw_text
@@ -87,6 +107,10 @@ def read_source(path: Path) -> str:
 
 
 def split_text(text: str) -> Iterable[str]:
+    """Split source text into overlapping chunks for retrieval.
+
+    Called by load_corpus after read_source returns file content.
+    """
     start = 0
     while start < len(text):
         end = min(start + CHUNK_SIZE, len(text))
@@ -100,6 +124,11 @@ def split_text(text: str) -> Iterable[str]:
 
 @st.cache_data(show_spinner=False)
 def load_corpus() -> list[CorpusChunk]:
+    """Load and cache local support corpus chunks.
+
+    Called by main on each Streamlit rerun. Streamlit caches the result until
+    source files or code dependencies change.
+    """
     chunks: list[CorpusChunk] = []
     for path in iter_support_files():
         text = read_source(path)
@@ -112,6 +141,11 @@ def load_corpus() -> list[CorpusChunk]:
 
 @st.cache_data(show_spinner=False)
 def build_keyword_index(chunks: Sequence[CorpusChunk]) -> dict[str, Any]:
+    """Build cached BM25-style keyword statistics for corpus chunks.
+
+    Called by answer_question before keyword_search. It calls tokenize for each
+    chunk and returns document frequency, term frequency, and length metadata.
+    """
     tokenized_docs = [tokenize(chunk.text) for chunk in chunks]
     doc_freq: Counter[str] = Counter()
     term_freqs: list[Counter[str]] = []
@@ -139,6 +173,12 @@ def keyword_search(
     keyword_index: dict[str, Any],
     top_k: int,
 ) -> list[RetrievalHit]:
+    """Return top local keyword matches for a user query.
+
+    Called by answer_question as the lexical half of hybrid retrieval. It calls
+    tokenize for the query and uses the cached keyword index from
+    build_keyword_index.
+    """
     query_terms = tokenize(query)
     if not query_terms:
         return []
@@ -184,15 +224,27 @@ def keyword_search(
 
 @st.cache_resource(show_spinner=False)
 def get_openai_client(api_key: str) -> OpenAI:
+    """Create and cache an OpenAI client for the provided API key.
+
+    Called by answer_question before embedding or chat completion requests.
+    """
     return OpenAI(api_key=api_key)
 
 
 @st.cache_resource(show_spinner=False)
 def get_pinecone_index(api_key: str, index_name: str) -> Any:
+    """Create and cache a Pinecone index handle.
+
+    Called by answer_question before semantic_search queries Pinecone.
+    """
     return Pinecone(api_key=api_key).Index(index_name)
 
 
 def create_query_embedding(client: OpenAI, query: str, model: str, dimensions: int) -> list[float]:
+    """Create an embedding vector for a user question.
+
+    Called by semantic_search before querying Pinecone.
+    """
     response = client.embeddings.create(
         model=model,
         input=query,
@@ -211,6 +263,11 @@ def semantic_search(
     embedding_dimensions: int,
     top_k: int,
 ) -> list[RetrievalHit]:
+    """Return semantic matches from Pinecone for a user query.
+
+    Called by answer_question as the semantic half of hybrid retrieval. This
+    function calls create_query_embedding before querying Pinecone.
+    """
     embedding = create_query_embedding(
         client=openai_client,
         query=query,
@@ -250,6 +307,12 @@ def merge_hits(
     semantic_weight: float,
     top_k: int,
 ) -> list[RetrievalHit]:
+    """Merge semantic and keyword hits into a ranked hybrid result set.
+
+    Called by answer_question after semantic_search and keyword_search complete.
+    The returned hits are used by should_escalate, generate_answer, and
+    render_sources.
+    """
     keyword_weight = 1.0 - semantic_weight
     merged: dict[str, RetrievalHit] = {}
 
@@ -274,6 +337,11 @@ def merge_hits(
 
 
 def should_escalate(hits: Sequence[RetrievalHit], threshold: float) -> tuple[bool, str]:
+    """Decide whether a retrieved answer should be escalated to a human.
+
+    Called by answer_question after merge_hits. Returns both the routing decision
+    and a short explanation displayed to the user when escalation occurs.
+    """
     if not hits:
         return True, "No relevant support records were retrieved."
 
@@ -288,6 +356,11 @@ def should_escalate(hits: Sequence[RetrievalHit], threshold: float) -> tuple[boo
 
 
 def build_context(hits: Sequence[RetrievalHit]) -> str:
+    """Build numbered support context blocks for the chat model.
+
+    Called by generate_answer to turn hybrid RetrievalHit objects into prompt
+    context.
+    """
     blocks = []
     for index, hit in enumerate(hits, 1):
         blocks.append(
@@ -305,6 +378,11 @@ def generate_answer(
     question: str,
     hits: Sequence[RetrievalHit],
 ) -> str:
+    """Generate a grounded support answer from retrieved context.
+
+    Called by answer_question when should_escalate permits an AI response. This
+    function calls build_context and asks OpenAI to cite source numbers.
+    """
     context = build_context(hits)
     response = client.chat.completions.create(
         model=model,
@@ -329,6 +407,11 @@ def generate_answer(
 
 
 def get_required_setting(name: str) -> str:
+    """Return a required setting from the environment.
+
+    Called by answer_question for required OpenAI and Pinecone credentials.
+    Raises RuntimeError so the Streamlit UI can display the setup problem.
+    """
     value = os.getenv(name)
     if not value:
         raise RuntimeError(f"Missing {name} in .env")
@@ -336,6 +419,10 @@ def get_required_setting(name: str) -> str:
 
 
 def configure_page() -> None:
+    """Configure Streamlit page metadata and app-wide styling.
+
+    Called by main before any visible app layout is rendered.
+    """
     st.set_page_config(page_title=APP_TITLE, page_icon="RM", layout="wide")
     st.markdown(
         """
@@ -373,6 +460,11 @@ def configure_page() -> None:
 
 
 def initialize_state() -> None:
+    """Initialize Streamlit session state keys used by the chat UI.
+
+    Called by main on every rerun before sidebar controls, chat history, or
+    source panels read session state.
+    """
     if "messages" not in st.session_state:
         st.session_state.messages = []
     if "last_hits" not in st.session_state:
@@ -384,6 +476,11 @@ def initialize_state() -> None:
 
 
 def render_sidebar(chunks: Sequence[CorpusChunk]) -> dict[str, Any]:
+    """Render retrieval controls and return selected runtime settings.
+
+    Called by main after load_corpus. The returned settings are passed to
+    answer_question when the user submits a prompt.
+    """
     st.sidebar.title("Controls")
     top_k = st.sidebar.slider("Results", min_value=3, max_value=12, value=DEFAULT_TOP_K)
     threshold = st.sidebar.slider(
@@ -421,6 +518,11 @@ def render_sidebar(chunks: Sequence[CorpusChunk]) -> dict[str, Any]:
 
 
 def render_sources(hits: Sequence[RetrievalHit]) -> None:
+    """Render the selected retrieval sources in the right-hand panel.
+
+    Called by main after chat handling using the latest hits stored in
+    st.session_state.
+    """
     st.subheader("Sources")
     if not hits:
         st.caption("No sources selected.")
@@ -445,6 +547,12 @@ def render_sources(hits: Sequence[RetrievalHit]) -> None:
 
 
 def answer_question(question: str, settings: dict[str, Any], chunks: Sequence[CorpusChunk]) -> str:
+    """Answer one user question using hybrid retrieval and OpenAI.
+
+    Called by main when a chat prompt is submitted. This function loads settings,
+    gets cached clients, calls build_keyword_index, keyword_search,
+    semantic_search, merge_hits, should_escalate, and generate_answer.
+    """
     openai_api_key = get_required_setting("OPENAI_API_KEY")
     pinecone_api_key = get_required_setting("PINECONE_API_KEY")
     index_name = os.getenv("PINECONE_INDEX_NAME") or os.getenv("PINECONE_INDEX")
@@ -498,6 +606,12 @@ def answer_question(question: str, settings: dict[str, Any], chunks: Sequence[Co
 
 
 def main() -> None:
+    """Run the Streamlit chatbot application.
+
+    Called by the module entrypoint when Streamlit executes this script.
+    Coordinates page setup, state initialization, corpus loading, sidebar
+    rendering, chat message rendering, question answering, and source display.
+    """
     configure_page()
     initialize_state()
 
