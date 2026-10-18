@@ -115,7 +115,6 @@ Data Set 2 -- Data
                 You need to create mock data for the following operational areas:
 
  
-
                 - Employee List (Employee Number, Job Title, Salary, SSN, Home Address, Phone Number Job Title Should be: CEO, HR, Sales, QA Engineer, Software Engineer.
 
                 - Customer List (Customer Number, Date, Username, First Name, Last Name, email address)
@@ -123,7 +122,6 @@ Data Set 2 -- Data
                 - Help Desk Tickets (Ticket Number, Date, Description, Severity, Username). Username should be in Customer List.
 
                 - Software Variances (Defect Number, Date, Description, Severity, DetectedBy). DetectedBy should be Employees in Employee List of the QA Engineer Role
-
  
 
                 Each document should include at least 50 records and be in json format. Include meta data. 
