@@ -149,7 +149,7 @@ uv run python bin/agenticai-query-pinecone --show-chunks
 
 ## Streamlit Chatbot
 
-We created `bin/agenticai-support-chatbot`.
+We created `bin/support_chatbot.py`.
 
 This is the main customer support chatbot UI. It uses Streamlit and supports hybrid retrieval:
 
@@ -270,7 +270,7 @@ python -m py_compile generate_test_questions.py
 We also verified:
 
 - `upsert_to_pinecone.py --dry-run` loaded `92` chunks
-- `bin/agenticai-support-chatbot` loaded the local corpus
+- `bin/support_chatbot.py` loaded the local corpus
 - `bin/agenticai-vectordb-query` found `92` vectors and `11` files in Pinecone
 - `bin/agenticai-rag-openai-pinecone` successfully answered a live RAG question
 - `bin/agenticai-generate-test-questions` created `20Questions.md`
