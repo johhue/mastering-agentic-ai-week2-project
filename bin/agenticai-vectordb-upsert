@@ -18,13 +18,25 @@ import argparse
 import hashlib
 import logging
 import os
-import uuid
-from collections.abc import Iterator, Sequence
+import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from common import batched, configure_logging, load_environment
+# Make the shared package available when this file is launched directly.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from project2.common import (
+    batched,
+    configure_logging,
+    load_environment,
+    find_input_dirs,
+    iter_text_files,
+    read_text,
+    split_text,
+    stable_vector_id,
+)
 from openai import OpenAI
 from pinecone import Pinecone
 
@@ -68,10 +80,7 @@ class DocumentChunk:
 
         Called by build_vectors when constructing Pinecone upsert payloads.
         """
-        digest = hashlib.sha256(
-            f"{self.source_path}:{self.chunk_index}:{self.text}".encode("utf-8")
-        ).hexdigest()
-        return str(uuid.uuid5(uuid.NAMESPACE_URL, digest))
+        return stable_vector_id(self.source_path, self.chunk_index, self.text)
 
 
 def parse_args() -> argparse.Namespace:
@@ -124,64 +133,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def find_input_dirs(input_glob: str) -> list[Path]:
-    """Return RemindMe directories matching the configured glob.
-
-    Called by main to identify the local corpus roots that should be chunked and
-    embedded.
-    """
-    dirs = [path for path in sorted(Path(".").glob(input_glob)) if path.is_dir()]
-    return [path for path in dirs if path.name.startswith("RemindMe")]
-
-
-def iter_text_files(input_dirs: Sequence[Path]) -> Iterator[Path]:
-    """Yield supported text files from input directories recursively.
-
-    Called by load_chunks to discover files that can be read into document
-    chunks.
-    """
-    for input_dir in input_dirs:
-        for path in sorted(input_dir.rglob("*")):
-            if path.is_file() and path.suffix.lower() in TEXT_SUFFIXES:
-                yield path
-
-
-def read_text(path: Path) -> str:
-    """Read one text file, returning an empty string if it cannot be read.
-
-    Called by load_chunks for each path from iter_text_files.
-    """
-    try:
-        return path.read_text(encoding="utf-8", errors="ignore").strip()
-    except OSError as exc:
-        LOGGER.warning("Skipping unreadable file %s: %s", path, exc)
-        return ""
-
-
-def split_text(text: str, chunk_size: int, chunk_overlap: int) -> Iterator[str]:
-    """Split text into overlapping chunks suitable for embedding.
-
-    Called by load_chunks after read_text returns content. Validates chunk
-    sizing so callers fail before sending malformed batches to OpenAI.
-    """
-    if chunk_size <= 0:
-        raise ValueError("chunk-size must be greater than zero")
-    if chunk_overlap < 0:
-        raise ValueError("chunk-overlap must be zero or greater")
-    if chunk_overlap >= chunk_size:
-        raise ValueError("chunk-overlap must be smaller than chunk-size")
-
-    start = 0
-    while start < len(text):
-        end = min(start + chunk_size, len(text))
-        chunk = text[start:end].strip()
-        if chunk:
-            yield chunk
-        if end == len(text):
-            break
-        start = end - chunk_overlap
-
-
 def load_chunks(
     input_dirs: Sequence[Path],
     chunk_size: int,
@@ -193,7 +144,7 @@ def load_chunks(
     iter_text_files, read_text, and split_text.
     """
     chunks: list[DocumentChunk] = []
-    for path in iter_text_files(input_dirs):
+    for path in iter_text_files(input_dirs, TEXT_SUFFIXES):
         text = read_text(path)
         if not text:
             continue
@@ -220,8 +171,8 @@ def embed_texts(
             dimensions=dimensions,
             encoding_format="float",
         )
-    except Exception as exc:
-        raise UpsertError(f"Failed to create OpenAI embeddings: {exc}") from exc
+    except Exception as embedding_request_error:
+        raise UpsertError(f"Failed to create OpenAI embeddings: {embedding_request_error}") from embedding_request_error
 
     return [item.embedding for item in sorted(response.data, key=lambda item: item.index)]
 
@@ -365,6 +316,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except (UpsertError, ValueError) as exc:
-        LOGGER.error("Error: %s", exc)
-        raise SystemExit(1) from exc
+    except (UpsertError, ValueError) as upsert_cli_error:
+        LOGGER.error("Error: %s", upsert_cli_error)
+        raise SystemExit(1) from upsert_cli_error

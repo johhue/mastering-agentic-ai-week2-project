@@ -3,20 +3,27 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 import os
-import re
-import uuid
+import sys
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import streamlit as st
-from common import load_environment
+# Make the shared package available when this file is launched directly.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from project2.common import (
+    load_environment,
+    iter_support_files,
+    read_source,
+    split_text,
+    tokenize,
+    stable_vector_id,
+)
 from openai import OpenAI
 from pinecone import Pinecone
 
@@ -34,7 +41,6 @@ DEFAULT_SEMANTIC_WEIGHT = 0.65
 CHUNK_SIZE = 1200
 CHUNK_OVERLAP = 200
 TEXT_SUFFIXES = {".json", ".md", ".txt", ".csv", ".yaml", ".yml"}
-TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9_-]*", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -51,10 +57,7 @@ class CorpusChunk:
         merge_hits when combining local keyword results with Pinecone semantic
         results.
         """
-        digest = hashlib.sha256(
-            f"{self.source_path}:{self.chunk_index}:{self.text}".encode("utf-8")
-        ).hexdigest()
-        return str(uuid.uuid5(uuid.NAMESPACE_URL, digest))
+        return stable_vector_id(self.source_path, self.chunk_index, self.text)
 
 
 @dataclass
@@ -67,61 +70,6 @@ class RetrievalHit:
     combined_score: float = 0.0
 
 
-def tokenize(text: str) -> list[str]:
-    """Split text into normalized keyword tokens.
-
-    Called by build_keyword_index for corpus chunks and by keyword_search for
-    incoming user queries.
-    """
-    return [token.lower() for token in TOKEN_RE.findall(text)]
-
-
-def iter_support_files() -> Iterable[Path]:
-    """Yield supported local support files from RemindMe directories.
-
-    Called by load_corpus to discover files that should be chunked for local
-    keyword retrieval.
-    """
-    for directory in sorted(Path(".").glob("RemindMe*")):
-        if not directory.is_dir():
-            continue
-        for path in sorted(directory.rglob("*")):
-            if path.is_file() and path.suffix.lower() in TEXT_SUFFIXES:
-                yield path
-
-
-def read_source(path: Path) -> str:
-    """Read a support file and normalize JSON files for readable context.
-
-    Called by load_corpus for each path from iter_support_files.
-    """
-    raw_text = path.read_text(encoding="utf-8", errors="ignore").strip()
-    if path.suffix.lower() != ".json":
-        return raw_text
-
-    try:
-        data = json.loads(raw_text)
-    except json.JSONDecodeError:
-        return raw_text
-    return json.dumps(data, indent=2, ensure_ascii=False)
-
-
-def split_text(text: str) -> Iterable[str]:
-    """Split source text into overlapping chunks for retrieval.
-
-    Called by load_corpus after read_source returns file content.
-    """
-    start = 0
-    while start < len(text):
-        end = min(start + CHUNK_SIZE, len(text))
-        chunk = text[start:end].strip()
-        if chunk:
-            yield chunk
-        if end == len(text):
-            break
-        start = end - CHUNK_OVERLAP
-
-
 @st.cache_data(show_spinner=False)
 def load_corpus() -> list[CorpusChunk]:
     """Load and cache local support corpus chunks.
@@ -130,11 +78,11 @@ def load_corpus() -> list[CorpusChunk]:
     source files or code dependencies change.
     """
     chunks: list[CorpusChunk] = []
-    for path in iter_support_files():
+    for path in iter_support_files(TEXT_SUFFIXES):
         text = read_source(path)
         if not text:
             continue
-        for index, chunk in enumerate(split_text(text)):
+        for index, chunk in enumerate(split_text(text, CHUNK_SIZE, CHUNK_OVERLAP)):
             chunks.append(CorpusChunk(path, index, chunk))
     return chunks
 
@@ -642,8 +590,8 @@ def main() -> None:
                 with st.spinner("Searching support records"):
                     try:
                         answer = answer_question(prompt, settings, chunks)
-                    except Exception as exc:
-                        answer = f"I can’t complete the lookup right now. {exc}"
+                    except Exception as chat_lookup_error:
+                        answer = f"I can’t complete the lookup right now. {chat_lookup_error}"
                         st.session_state.last_escalated = True
                     st.markdown(answer)
             st.session_state.messages.append({"role": "assistant", "content": answer})

@@ -13,20 +13,25 @@ import argparse
 import json
 import logging
 import os
+import sys
 from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from common import configure_logging, get_required_env, load_environment
+# Make the shared package available when this file is launched directly.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from project2.common import configure_logging, get_required_env, load_environment
 
 
 API_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_BUCKET_WIDTH = "1d"
-LOGGER = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
 class OpenAIUsageError(RuntimeError):
@@ -46,7 +51,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--list-models",
         action="store_true",
-        help="List all models available to OPENAI_API_KEY instead of reporting usage.",
+        help="List all models available to OPENAI_ADMIN_API_KEY instead of reporting usage.",
     )
     parser.add_argument(
         "--api-key-env",
@@ -95,8 +100,8 @@ def parse_optional_decimal(value: str | None) -> Decimal | None:
         return None
     try:
         return Decimal(value)
-    except InvalidOperation as exc:
-        raise OpenAIUsageError(f"Invalid decimal value: {value}") from exc
+    except InvalidOperation as decimal_parse_error:
+        raise OpenAIUsageError(f"Invalid decimal value: {value}") from decimal_parse_error
 
 
 def parse_optional_int(value: str | None) -> int | None:
@@ -108,8 +113,8 @@ def parse_optional_int(value: str | None) -> int | None:
         return None
     try:
         return int(value)
-    except ValueError as exc:
-        raise OpenAIUsageError(f"Invalid integer value: {value}") from exc
+    except ValueError as integer_parse_error:
+        raise OpenAIUsageError(f"Invalid integer value: {value}") from integer_parse_error
 
 
 def current_month_start() -> int:
@@ -135,7 +140,7 @@ def get_json(api_key: str, path: str, params: Mapping[str, Any]) -> dict[str, An
     Called by paginated_get for each costs or usage page.
     """
     query = urlencode({key: value for key, value in params.items() if value is not None})
-    base_url = (os.getenv("OPENAI_CHAT_BASE_URL") or API_BASE_URL).rstrip("/")
+    base_url = (os.getenv("OPENAI_BASE_URL") or API_BASE_URL).rstrip("/")
     url = f"{base_url}{path}" + (f"?{query}" if query else "")
     request = Request(
         url,
@@ -146,20 +151,20 @@ def get_json(api_key: str, path: str, params: Mapping[str, Any]) -> dict[str, An
         method="GET",
     )
 
-    LOGGER.info("Attempting OpenAI URL: %s", url)
-    LOGGER.debug("Sending OpenAI GET request to %s", path)
+    log.info("Attempting OpenAI URL: %s", url)
+    log.debug("Sending OpenAI GET request to %s", path)
     try:
         with urlopen(request, timeout=30) as response:
             return json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        detail = read_error_detail(exc)
-        raise OpenAIUsageError(f"OpenAI API request failed ({exc.code}): {detail}") from exc
-    except URLError as exc:
-        raise OpenAIUsageError(f"Could not reach OpenAI API: {exc.reason}") from exc
-    except json.JSONDecodeError as exc:
-        raise OpenAIUsageError(f"OpenAI API returned invalid JSON: {exc}") from exc
-    except (OSError, UnicodeDecodeError) as exc:
-        raise OpenAIUsageError(f"Could not read OpenAI API response: {exc}") from exc
+    except HTTPError as http_request_error:
+        detail = read_error_detail(http_request_error)
+        raise OpenAIUsageError(f"OpenAI API request failed ({http_request_error.code}): {detail}") from http_request_error
+    except URLError as url_connection_error:
+        raise OpenAIUsageError(f"Could not reach OpenAI API: {url_connection_error.reason}") from url_connection_error
+    except json.JSONDecodeError as json_decode_error:
+        raise OpenAIUsageError(f"OpenAI API returned invalid JSON: {json_decode_error}") from json_decode_error
+    except (OSError, UnicodeDecodeError) as response_read_error:
+        raise OpenAIUsageError(f"Could not read OpenAI API response: {response_read_error}") from response_read_error
 
 
 def fetch_models(api_key: str) -> list[dict[str, Any]]:
@@ -173,7 +178,7 @@ def fetch_models(api_key: str) -> list[dict[str, Any]]:
         for model in models
     ):
         raise OpenAIUsageError("OpenAI models response contains an invalid model.")
-    LOGGER.info("Retrieved %d available OpenAI models.", len(models))
+    log.info("Retrieved %d available OpenAI models.", len(models))
     return sorted(models, key=lambda model: model["id"])
 
 
@@ -294,36 +299,36 @@ def print_report(
     Called by main after retrieving costs and usage from OpenAI.
     """
     total_tokens = usage["input_tokens"] + usage["output_tokens"]
-    LOGGER.info("OpenAI organization usage report")
-    LOGGER.info("Window: %s to %s", format_time(start_time), format_time(end_time))
-    LOGGER.info("")
-    LOGGER.info("Month-to-date cost: %s", format_money(total_cost))
+    log.info("OpenAI organization usage report")
+    log.info("Window: %s to %s", format_time(start_time), format_time(end_time))
+    log.info("")
+    log.info("Month-to-date cost: %s", format_money(total_cost))
 
     if monthly_bill_limit_usd is None:
-        LOGGER.info(
+        log.info(
             "Bill limit: unavailable from the OpenAI API "
             "(set OPENAI_MONTHLY_BILL_LIMIT_USD to compute remaining spend)."
         )
     else:
         remaining = monthly_bill_limit_usd - total_cost
-        LOGGER.info("Bill limit: %s", format_money(monthly_bill_limit_usd))
-        LOGGER.info("Bill limit remaining: %s", format_money(remaining))
+        log.info("Bill limit: %s", format_money(monthly_bill_limit_usd))
+        log.info("Bill limit remaining: %s", format_money(remaining))
 
-    LOGGER.info("")
-    LOGGER.info("Completions input tokens: %s", f"{usage['input_tokens']:,}")
-    LOGGER.info("Completions output tokens: %s", f"{usage['output_tokens']:,}")
-    LOGGER.info("Cached input tokens: %s", f"{usage['input_cached_tokens']:,}")
-    LOGGER.info("Completions total tokens: %s", f"{total_tokens:,}")
-    LOGGER.info("Model requests: %s", f"{usage['num_model_requests']:,}")
+    log.info("")
+    log.info("Completions input tokens: %s", f"{usage['input_tokens']:,}")
+    log.info("Completions output tokens: %s", f"{usage['output_tokens']:,}")
+    log.info("Cached input tokens: %s", f"{usage['input_cached_tokens']:,}")
+    log.info("Completions total tokens: %s", f"{total_tokens:,}")
+    log.info("Model requests: %s", f"{usage['num_model_requests']:,}")
 
     if monthly_token_budget is None:
-        LOGGER.info(
+        log.info(
             "Tokens left: unavailable from the OpenAI API "
             "(set OPENAI_MONTHLY_TOKEN_BUDGET to compute against your own budget)."
         )
     else:
-        LOGGER.info("Token budget: %s", f"{monthly_token_budget:,}")
-        LOGGER.info("Tokens left: %s", f"{monthly_token_budget - total_tokens:,}")
+        log.info("Token budget: %s", f"{monthly_token_budget:,}")
+        log.info("Tokens left: %s", f"{monthly_token_budget - total_tokens:,}")
 
 
 def format_time(timestamp: int) -> str:
@@ -342,7 +347,7 @@ def main() -> int:
     configure_logging()
     args = parse_args()
     key_env = args.api_key_env or (
-        "OPENAI_ADMIN_KEY" if args.list_models else "OPENAI_ADMIN_KEY"
+        "OPENAI_API_KEY" if args.list_models else "OPENAI_ADMIN_KEY"
     )
     api_key = get_required_env(
         key_env,
@@ -375,8 +380,8 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except KeyboardInterrupt:
-        LOGGER.error("Interrupted.")
+        log.error("Interrupted.")
         raise SystemExit(130) from None
-    except OpenAIUsageError as exc:
-        LOGGER.error("Error: %s", exc)
-        raise SystemExit(1) from exc
+    except OpenAIUsageError as admin_cli_error:
+        log.error("Error: %s", admin_cli_error)
+        raise SystemExit(1) from admin_cli_error

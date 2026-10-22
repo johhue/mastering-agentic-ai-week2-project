@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+import re
+import uuid
 import os
 from collections.abc import Iterator, Sequence
 from pathlib import Path
@@ -10,6 +14,11 @@ from typing import Any, TypeVar
 
 from dotenv import load_dotenv
 
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DATA_ROOT = PROJECT_ROOT / "data"
+LOGGER = logging.getLogger(__name__)
+TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9_-]*", re.IGNORECASE)
 
 T = TypeVar("T")
 DEFAULT_LOG_FORMAT = "%(message)s"
@@ -95,7 +104,7 @@ def load_environment(override: bool = True) -> None:
         override: Whether values from .env should replace existing environment
             variables.
     """
-    load_dotenv(override=override)
+    load_dotenv(PROJECT_ROOT / ".env", override=override)
 
 
 def get_required_env(
@@ -166,3 +175,82 @@ def batched(items: Sequence[T], batch_size: int) -> Iterator[Sequence[T]]:
         raise ValueError("batch size must be greater than zero")
     for start in range(0, len(items), batch_size):
         yield items[start : start + batch_size]
+
+
+def split_text(text: str, chunk_size: int, chunk_overlap: int) -> Iterator[str]:
+    """Split text into overlapping chunks suitable for embedding.
+
+    Used by ingestion and retrieval to keep chunk boundaries consistent.
+    Invalid sizing raises ValueError before any chunks are produced.
+    """
+    if chunk_size <= 0:
+        raise ValueError("chunk-size must be greater than zero")
+    if chunk_overlap < 0:
+        raise ValueError("chunk-overlap must be zero or greater")
+    if chunk_overlap >= chunk_size:
+        raise ValueError("chunk-overlap must be smaller than chunk-size")
+
+    start = 0
+    while start < len(text):
+        end = min(start + chunk_size, len(text))
+        chunk = text[start:end].strip()
+        if chunk:
+            yield chunk
+        if end == len(text):
+            break
+        start = end - chunk_overlap
+
+
+def find_input_dirs(input_glob: str = "RemindMe*") -> list[Path]:
+    """Return sorted RemindMe corpus directories under the repository data root."""
+    return [path for path in sorted(DATA_ROOT.glob(input_glob))
+            if path.is_dir() and path.name.startswith("RemindMe")]
+
+
+def iter_text_files(input_dirs: Sequence[Path], suffixes: set[str]) -> Iterator[Path]:
+    """Yield sorted files recursively, preserving each caller's supported suffixes."""
+    for input_dir in input_dirs:
+        for path in sorted(input_dir.rglob("*")):
+            if path.is_file() and path.suffix.lower() in suffixes:
+                yield path
+
+
+def iter_support_files(suffixes: set[str]) -> Iterator[Path]:
+    """Yield supported files from the repository's RemindMe corpus directories."""
+    yield from iter_text_files(find_input_dirs(), suffixes)
+
+
+def read_text(path: Path) -> str:
+    """Read UTF-8 text, logging and skipping files that cannot be read."""
+    try:
+        return path.read_text(encoding="utf-8", errors="ignore").strip()
+    except OSError as corpus_read_error:
+        LOGGER.warning("Skipping unreadable file %s: %s", path, corpus_read_error)
+        return ""
+
+
+def read_source(path: Path) -> str:
+    """Read source text and pretty-print valid JSON for retrieval context."""
+    raw_text = read_text(path)
+    if path.suffix.lower() == ".json":
+        try:
+            return json.dumps(json.loads(raw_text), indent=2, ensure_ascii=False)
+        except json.JSONDecodeError:
+            LOGGER.debug("Using raw text for invalid JSON source %s", path)
+    return raw_text
+
+
+def compact_text(text: str) -> str:
+    """Collapse whitespace into single spaces for compact source excerpts."""
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def tokenize(text: str) -> list[str]:
+    """Return normalized keyword tokens for local retrieval."""
+    return [token.lower() for token in TOKEN_RE.findall(text)]
+
+
+def stable_vector_id(source_path: Path, chunk_index: int, text: str) -> str:
+    """Return the shared deterministic ID used by ingestion and retrieval."""
+    digest = hashlib.sha256(f"{source_path}:{chunk_index}:{text}".encode("utf-8")).hexdigest()
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, digest))

@@ -1,5 +1,38 @@
 # Codex Build Log
 
+## Shared Corpus Helpers
+
+`project2/common.py` owns corpus directory discovery, file iteration, safe UTF-8
+reading, JSON normalization, whitespace compaction, overlapping text splitting,
+keyword tokenization, and deterministic vector IDs, alongside environment and
+logging helpers. The scripts in `bin/` import these helpers; keep command-specific
+arguments, API calls, UI, and result models in their respective scripts.
+
+Corpus discovery uses `<repository>/data/RemindMe*`, and `.env` is loaded from
+the repository root regardless of the working directory. Each script supplies
+its own supported file suffixes and chunk settings. Unreadable sources are logged
+and skipped; malformed JSON remains raw text. Direct Python launchers add the
+repository root to the import path before importing `project2.common`.
+
+Vector IDs preserve the existing SHA-256/UUID5 formula, including the source path.
+Discovery now returns absolute paths: re-upsert into a fresh or cleared namespace
+if existing vectors were generated with relative paths, so hybrid retrieval uses
+matching IDs and avoids duplicate entries.
+
+After `uv sync`, run `uv run python -m unittest discover -s tests -v` to verify
+chunk boundaries, vector ID compatibility, file handling, and normalization.
+Offline corpus checks found 92 ingestion/retrieval chunks and 11 question sources.
+
+## Exception Variable Convention
+
+Scripts under `bin/` use a distinct, descriptive variable for every bound
+exception, such as `index_connection_error` or `query_cli_error`. Do not reuse
+an exception variable name from an enclosing scope: Python clears an exception
+binding when its handler exits. Update all references in the handler, including
+log messages, formatted strings, and `raise ... from ...` chains, when renaming.
+The 24 existing bindings across the six Python scripts were checked for syntax
+and equivalent parsed code after accounting for these variable renames.
+
 This document summarizes the work completed with Codex to create the RemindMe customer support AI application.
 
 ## Application Goal
@@ -48,7 +81,7 @@ PINECONE_NAMESPACE=__default__
 
 ## Pinecone Upsert
 
-We created `upsert_to_pinecone.py`.
+We created `bin/agenticai-vectordb-upsert`.
 
 This script:
 
@@ -77,14 +110,26 @@ The dry run loaded `92` chunks from the RemindMe data and manuals.
 
 ## Pinecone Inspection
 
-We created `query_pinecone.py`.
+We created `bin/agenticai-vectordb-query`.
 
 This script connects to Pinecone and lists the source files represented by upserted vectors.
+
+After moving the command into `bin/`, it adds the resolved repository root to
+Python's import path so `project2.common` is available from any working directory.
+Use the project environment (`uv sync` to install dependencies), then run
+`uv run python bin/agenticai-query-pinecone` from the repository root. With the
+project environment activated, the executable also supports
+`./bin/agenticai-query-pinecone --help`. Batch sizes must be between 1 and 1000.
+Keep credentials in the repository `.env`; set `LOG_LEVEL=DEBUG` to enable
+debugging and `LOGGER_FILE` for optional file logging.
+Use only the `pinecone` SDK dependency: the obsolete `pinecone-client` package
+conflicts with its imports. If repairing an environment that had both installed,
+run `uv sync --reinstall-package pinecone` after removing `pinecone-client`.
 
 Run it with:
 
 ```bash
-uv run python query_pinecone.py
+uv run python bin/agenticai-query-pinecone
 ```
 
 The live verification showed:
@@ -99,12 +144,12 @@ Files: 11
 For detailed vector and chunk output:
 
 ```bash
-uv run python query_pinecone.py --show-chunks
+uv run python bin/agenticai-query-pinecone --show-chunks
 ```
 
 ## Streamlit Chatbot
 
-We created `support_chatbot.py`.
+We created `bin/agenticai-support-chatbot`.
 
 This is the main customer support chatbot UI. It uses Streamlit and supports hybrid retrieval:
 
@@ -119,7 +164,7 @@ The chatbot avoids guessing by default. If retrieval confidence is too low, it r
 
 ## Streamlit Launcher
 
-We created `run_support_chatbot.sh`.
+We created `bin/agenticai-run-chatbot.sh`.
 
 Run the chatbot with:
 
@@ -137,7 +182,7 @@ STREAMLIT_PORT=8502 ./run_support_chatbot.sh
 
 ## Command-Line RAG Utility
 
-We created `query_openai_pinecone.py`.
+We created `bin/agenticai-rag-openai-pinecone`.
 
 This command-line utility lets a user ask a question and get an OpenAI-generated answer using Pinecone RAG context.
 
@@ -159,7 +204,7 @@ When hallucinations are permitted, the model is still instructed to say when an 
 
 ## Test Question Generation
 
-We created `generate_test_questions.py`.
+We created `bin/agenticai-generate-test-questions`.
 
 This script:
 
@@ -225,10 +270,10 @@ python -m py_compile generate_test_questions.py
 We also verified:
 
 - `upsert_to_pinecone.py --dry-run` loaded `92` chunks
-- `support_chatbot.py` loaded the local corpus
-- `query_pinecone.py` found `92` vectors and `11` files in Pinecone
-- `query_openai_pinecone.py` successfully answered a live RAG question
-- `generate_test_questions.py` created `20Questions.md`
+- `bin/agenticai-support-chatbot` loaded the local corpus
+- `bin/agenticai-vectordb-query` found `92` vectors and `11` files in Pinecone
+- `bin/agenticai-rag-openai-pinecone` successfully answered a live RAG question
+- `bin/agenticai-generate-test-questions` created `20Questions.md`
 
 ## Final Workflow
 
@@ -242,7 +287,7 @@ We also verified:
 3. Confirm uploaded files:
 
    ```bash
-   uv run python query_pinecone.py
+   uv run python bin/agenticai-query-pinecone
    ```
 
 4. Launch the Streamlit chatbot:
@@ -264,4 +309,3 @@ We also verified:
    ```
 
 The result is a working OpenAI + Pinecone customer support RAG application with both UI and CLI access, inspection tooling, test-question generation, and hallucination-aware fallback behavior.
-

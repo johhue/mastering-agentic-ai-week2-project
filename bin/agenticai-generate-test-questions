@@ -7,23 +7,32 @@ import argparse
 import json
 import logging
 import os
+import sys
 import random
-import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from common import configure_logging, get_required_env, load_environment
+# Make the shared package available when this file is launched directly.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from project2.common import (
+    configure_logging,
+    get_required_env,
+    load_environment,
+    iter_support_files,
+    compact_text,
+    read_source as read_source_text,
+)
 from openai import OpenAI
 
 
 DEFAULT_MODEL = "gpt-4.1-mini"
-DEFAULT_OUTPUT_FILE = Path("20Questions.md")
+DEFAULT_OUTPUT_FILE = Path("../20Questions.md")
 DEFAULT_QUESTION_COUNT = 20
 DEFAULT_CONTEXT_BUDGET = 18000
 DEFAULT_RANDOM_SEED = None
 TEXT_SUFFIXES = {".csv", ".html", ".json", ".md", ".rst", ".txt", ".yaml", ".yml"}
-WHITESPACE_RE = re.compile(r"\s+")
 LOGGER = logging.getLogger(__name__)
 
 
@@ -79,51 +88,24 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def iter_remindme_files() -> Iterable[Path]:
-    """Yield supported text-like files under local RemindMe directories.
-
-    Called by load_sources to discover source material for question generation.
-    """
-    for directory in sorted(Path(".").glob("RemindMe*")):
-        if not directory.is_dir():
-            continue
-        for path in sorted(directory.rglob("*")):
-            if path.is_file() and path.suffix.lower() in TEXT_SUFFIXES:
-                yield path
-
-
-def compact_text(text: str) -> str:
-    """Normalize whitespace in source text to a single-line excerpt form.
-
-    Called by read_source after loading raw file content.
-    """
-    return WHITESPACE_RE.sub(" ", text).strip()
-
-
 def read_source(path: Path) -> SourceDocument:
     """Read one source file and return compacted text with its path.
 
-    Called by load_sources for each path from iter_remindme_files. JSON files are
+    Called by load_sources for each path from iter_support_files. JSON files are
     pretty-printed first when they contain valid JSON so their structure is
     preserved in the sampled context.
     """
-    raw_text = path.read_text(encoding="utf-8", errors="ignore").strip()
-    if path.suffix.lower() == ".json":
-        try:
-            raw_text = json.dumps(json.loads(raw_text), indent=2, ensure_ascii=False)
-        except json.JSONDecodeError:
-            pass
-    return SourceDocument(path=path, text=compact_text(raw_text))
+    return SourceDocument(path=path, text=compact_text(read_source_text(path)))
 
 
 def load_sources() -> list[SourceDocument]:
     """Load all non-empty RemindMe source documents.
 
-    Called by main before source sampling. This function calls iter_remindme_files
+    Called by main before source sampling. This function calls iter_support_files
     and read_source, then filters out empty documents.
     """
     sources = []
-    for path in iter_remindme_files():
+    for path in iter_support_files(TEXT_SUFFIXES):
         source = read_source(path)
         if source.text:
             sources.append(source)
@@ -177,8 +159,8 @@ def extract_questions(response_text: str) -> list[str]:
     """
     try:
         data = json.loads(response_text)
-    except json.JSONDecodeError as exc:
-        raise QuestionGenerationError(f"OpenAI did not return valid JSON: {exc}") from exc
+    except json.JSONDecodeError as questions_json_error:
+        raise QuestionGenerationError(f"OpenAI did not return valid JSON: {questions_json_error}") from questions_json_error
 
     questions = data.get("questions")
     if not isinstance(questions, list):
@@ -298,6 +280,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except QuestionGenerationError as exc:
-        LOGGER.error("Error: %s", exc)
-        raise SystemExit(1) from exc
+    except QuestionGenerationError as question_generation_cli_error:
+        LOGGER.error("Error: %s", question_generation_cli_error)
+        raise SystemExit(1) from question_generation_cli_error

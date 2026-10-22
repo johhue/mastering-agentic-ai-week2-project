@@ -14,6 +14,7 @@ dependencies = [
     "langchain-pinecone>=0.2.13",
     "langchain-text-splitters>=1.1.2",
     "lxml>=6.1.1",
+    "openai>=2.41.0",
     "pinecone>=7.3.0",
     "python-dotenv>=1.2.2",
     "rank-bm25>=0.2.2",
