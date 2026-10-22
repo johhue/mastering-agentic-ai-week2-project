@@ -183,7 +183,21 @@ uv run python generate_test_questions.py --seed 42
 
 The generated file is `20Questions.md`, which contains questions for testing the RAG chatbot and CLI.
 
-## Requirements
+## OpenAI Model Listing and Usage
+
+Run `uv run python query_openai.py --list-models` to print every model ID
+returned by `GET /v1/models`, sorted alphabetically. This mode uses
+`OPENAI_API_KEY` from `.env` and lists models visible to that key without
+requesting billing data. No additional dependencies are needed.
+
+Without `--list-models`, the existing organization usage report uses
+`OPENAI_ADMIN_KEY`. Override either key variable with `--api-key-env NAME`.
+The optional `.env` setting `OPENAI_CHAT_BASE_URL` overrides the API base URL.
+Set `LOG_LEVEL=DEBUG` for debugging and `LOGGER_FILE` for file logging.
+HTTP, network, malformed response, and missing credential errors are logged
+and return a nonzero exit code.
+
+## Runtime Dependencies
 
 We updated `requirements.txt` so the project includes the needed runtime packages:
 

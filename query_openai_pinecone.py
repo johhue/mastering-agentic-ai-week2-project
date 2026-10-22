@@ -99,12 +99,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--chat-model",
         default=os.getenv("OPENAI_CHAT_MODEL", DEFAULT_CHAT_MODEL),
-        help="OpenAI chat model.",
+        help="OpenAI chat model. Defaults to OPENAI_CHAT_MODEL.",
     )
     parser.add_argument(
         "--embedding-model",
         default=os.getenv("OPENAI_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL),
-        help="OpenAI embedding model.",
+        help="OpenAI embedding model. Defaults to OPENAI_EMBEDDING_MODEL.",
     )
     parser.add_argument(
         "--embedding-dimensions",
@@ -222,6 +222,11 @@ def create_query_embedding(
         model,
         dimensions,
         len(question),
+    )
+    LOGGER.info(
+        "Attempting OpenAI embedding request: URL=%s/embeddings model=%s",
+        str(client.base_url).rstrip("/"),
+        model,
     )
     response = client.embeddings.create(
         model=model,
@@ -388,6 +393,11 @@ def generate_answer(
         len(context),
         len(hits),
     )
+    LOGGER.info(
+        "Attempting OpenAI chat request: URL=%s/chat/completions model=%s",
+        str(client.base_url).rstrip("/"),
+        model,
+    )
     response = client.chat.completions.create(
         model=model,
         temperature=0.2 if allow_hallucinations else 0.0,
@@ -460,7 +470,7 @@ def main() -> int:
     retrieval, refusal handling, answer generation, and token reporting.
     """
     args = parse_args()
-    configure_logging(debug=args.debug, level=logging.WARNING)
+    configure_logging(debug=args.debug, level=logging.INFO)
     LOGGER.debug(
         "Parsed arguments: index_set=%s namespace=%s chat_model=%s embedding_model=%s "
         "embedding_dimensions=%s top_k=%s confidence_threshold=%.3f show_sources=%s "
@@ -476,7 +486,7 @@ def main() -> int:
         args.allow_hallucinations,
     )
     question = get_question(args)
-    openai_api_key = get_required_env("OPENAI_API_KEY", QueryError)
+    openai_api_key = get_required_env("OPENAI_CHAT_API_KEY", QueryError)
     pinecone_api_key = get_required_env("PINECONE_API_KEY", QueryError)
     if not args.index:
         raise QueryError("Missing PINECONE_INDEX_NAME. Add it to .env or pass --index.")
@@ -484,8 +494,17 @@ def main() -> int:
         raise QueryError("--top-k must be greater than zero.")
 
     LOGGER.debug("Validated required environment variables.")
-    openai_client = OpenAI(api_key=openai_api_key)
-    LOGGER.debug("Created OpenAI client.")
+    chat_client = OpenAI(
+        api_key=openai_api_key,
+        base_url=os.getenv("OPENAI_CHAT_BASE_URL") or os.getenv("OPENAI_BASE_URL") or None,
+    )
+    embedding_client = OpenAI(
+        api_key=openai_api_key,
+        base_url=(
+            os.getenv("OPENAI_EMBEDDING_BASE_URL") or os.getenv("OPENAI_BASE_URL") or None
+        ),
+    )
+    LOGGER.debug("Created OpenAI chat and embedding clients.")
     pinecone_index = Pinecone(api_key=pinecone_api_key).Index(args.index)
     LOGGER.debug("Created Pinecone index client for index=%s.", args.index)
 
@@ -498,7 +517,7 @@ def main() -> int:
     )
 
     embedding_result = create_query_embedding(
-        client=openai_client,
+        client=embedding_client,
         question=question,
         model=args.embedding_model,
         dimensions=args.embedding_dimensions,
@@ -508,7 +527,7 @@ def main() -> int:
         embedding=embedding_result.embedding,
         namespace=args.namespace,
         top_k=args.top_k,
-    )
+    )fg
     usages = [embedding_result.usage]
 
     refuse, reason = should_refuse_answer(
@@ -528,7 +547,7 @@ def main() -> int:
         return 0
 
     answer_result = generate_answer(
-        client=openai_client,
+        client=chat_client,
         model=args.chat_model,
         question=question,
         hits=hits,

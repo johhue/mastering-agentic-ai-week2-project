@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Report current OpenAI organization spend and token usage.
+"""List available OpenAI models or report organization spend and token usage.
 
 OpenAI exposes organization costs and usage through admin endpoints. The API
 does not expose a universal account bill limit or token quota, so this script
@@ -41,12 +41,17 @@ def parse_args() -> argparse.Namespace:
     load_environment()
 
     parser = argparse.ArgumentParser(
-        description="Show OpenAI organization costs and completions token usage."
+        description="List OpenAI models or show organization costs and token usage."
+    )
+    parser.add_argument(
+        "--list-models",
+        action="store_true",
+        help="List all models available to OPENAI_API_KEY instead of reporting usage.",
     )
     parser.add_argument(
         "--api-key-env",
-        default="OPENAI_ADMIN_KEY",
-        help="Environment variable containing an OpenAI admin API key.",
+        default=None,
+        help="API key variable (default: OPENAI_API_KEY for models, OPENAI_ADMIN_KEY for usage).",
     )
     parser.add_argument(
         "--start-time",
@@ -130,7 +135,8 @@ def get_json(api_key: str, path: str, params: Mapping[str, Any]) -> dict[str, An
     Called by paginated_get for each costs or usage page.
     """
     query = urlencode({key: value for key, value in params.items() if value is not None})
-    url = f"{API_BASE_URL}{path}?{query}"
+    base_url = (os.getenv("OPENAI_CHAT_BASE_URL") or API_BASE_URL).rstrip("/")
+    url = f"{base_url}{path}" + (f"?{query}" if query else "")
     request = Request(
         url,
         headers={
@@ -140,6 +146,8 @@ def get_json(api_key: str, path: str, params: Mapping[str, Any]) -> dict[str, An
         method="GET",
     )
 
+    LOGGER.info("Attempting OpenAI URL: %s", url)
+    LOGGER.debug("Sending OpenAI GET request to %s", path)
     try:
         with urlopen(request, timeout=30) as response:
             return json.loads(response.read().decode("utf-8"))
@@ -150,6 +158,23 @@ def get_json(api_key: str, path: str, params: Mapping[str, Any]) -> dict[str, An
         raise OpenAIUsageError(f"Could not reach OpenAI API: {exc.reason}") from exc
     except json.JSONDecodeError as exc:
         raise OpenAIUsageError(f"OpenAI API returned invalid JSON: {exc}") from exc
+    except (OSError, UnicodeDecodeError) as exc:
+        raise OpenAIUsageError(f"Could not read OpenAI API response: {exc}") from exc
+
+
+def fetch_models(api_key: str) -> list[dict[str, Any]]:
+    """Return all models visible to the API key, sorted by model identifier."""
+    payload = get_json(api_key, "/models", {})
+    if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+        raise OpenAIUsageError("OpenAI models response is missing a model list.")
+    models = payload["data"]
+    if any(
+        not isinstance(model, dict) or not isinstance(model.get("id"), str)
+        for model in models
+    ):
+        raise OpenAIUsageError("OpenAI models response contains an invalid model.")
+    LOGGER.info("Retrieved %d available OpenAI models.", len(models))
+    return sorted(models, key=lambda model: model["id"])
 
 
 def read_error_detail(error: HTTPError) -> str:
@@ -316,11 +341,18 @@ def main() -> int:
     """
     configure_logging()
     args = parse_args()
-    api_key = get_required_env(
-        args.api_key_env,
-        OpenAIUsageError,
-        f"Missing {args.api_key_env}. Add an OpenAI admin API key to .env.",
+    key_env = args.api_key_env or (
+        "OPENAI_ADMIN_KEY" if args.list_models else "OPENAI_ADMIN_KEY"
     )
+    api_key = get_required_env(
+        key_env,
+        OpenAIUsageError,
+        f"Missing {key_env}. Add the appropriate OpenAI API key to .env.",
+    )
+    if args.list_models:
+        for model in fetch_models(api_key):
+            print(model["id"])
+        return 0
     start_time = args.start_time or current_month_start()
     end_time = args.end_time or current_time()
     if end_time <= start_time:

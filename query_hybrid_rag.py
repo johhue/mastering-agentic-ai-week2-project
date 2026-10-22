@@ -1,0 +1,783 @@
+#!/usr/bin/env python3
+"""Ask OpenAI a question using hybrid Pinecone vector and BM25 retrieval."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import logging
+import os
+import re
+import sys
+import uuid
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from common import configure_logging, get_field, get_int_field, get_required_env, load_environment
+from openai import OpenAI
+from pinecone import Pinecone
+from rank_bm25 import BM25Okapi
+
+
+DEFAULT_CHAT_MODEL = "gpt-4.1-mini"
+DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
+DEFAULT_EMBEDDING_DIMENSIONS = 512
+DEFAULT_NAMESPACE = "__default__"
+DEFAULT_TOP_K = 6
+DEFAULT_RETRIEVER_TOP_K = 12
+DEFAULT_VECTOR_WEIGHT = 0.65
+DEFAULT_BM25_WEIGHT = 0.35
+DEFAULT_CONFIDENCE_THRESHOLD = 0.20
+CHUNK_SIZE = 1200
+CHUNK_OVERLAP = 200
+TEXT_SUFFIXES = {".csv", ".html", ".json", ".md", ".rst", ".txt", ".yaml", ".yml"}
+TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9_-]*", re.IGNORECASE)
+LOGGER = logging.getLogger(__name__)
+
+
+class HybridRagError(RuntimeError):
+    """Raised when hybrid RAG query execution cannot continue."""
+
+
+@dataclass(frozen=True)
+class CorpusChunk:
+    """A local text chunk with metadata matching the Pinecone upsert schema."""
+
+    source_path: Path
+    chunk_index: int
+    text: str
+
+    @property
+    def vector_id(self) -> str:
+        """Return the stable vector ID used by the upsert script.
+
+        Called by load_corpus_chunks and bm25_retrieve when creating local
+        RetrievalHit objects that can be merged with Pinecone hits.
+        """
+        digest = hashlib.sha256(
+            f"{self.source_path}:{self.chunk_index}:{self.text}".encode("utf-8")
+        ).hexdigest()
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, digest))
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        """Return metadata fields shared by local and Pinecone retrieval.
+
+        Called by metadata_matches, bm25_retrieve, and ensemble_retrieve.
+        """
+        return {
+            "source": str(self.source_path),
+            "source_name": self.source_path.name,
+            "source_dir": self.source_path.parent.name,
+            "chunk_index": self.chunk_index,
+            "text": self.text,
+        }
+
+
+@dataclass
+class RetrievalHit:
+    """A document chunk returned by one or more retrievers."""
+
+    vector_id: str
+    source: str
+    text: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+    vector_score: float = 0.0
+    bm25_score: float = 0.0
+    ensemble_score: float = 0.0
+
+
+@dataclass(frozen=True)
+class TokenUsage:
+    """Token usage for one OpenAI request."""
+
+    label: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+
+
+@dataclass(frozen=True)
+class EmbeddingResult:
+    """Embedding vector and usage metadata from OpenAI."""
+
+    embedding: list[float]
+    usage: TokenUsage
+
+
+@dataclass(frozen=True)
+class AnswerResult:
+    """Answer text and usage metadata from OpenAI."""
+
+    answer: str
+    usage: TokenUsage
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse CLI options and load .env-backed defaults.
+
+    Called by main before credentials, retriever settings, and metadata filters
+    are validated.
+    """
+    load_environment()
+
+    parser = argparse.ArgumentParser(
+        description="Ask a question using ensemble vector plus BM25 RAG."
+    )
+    parser.add_argument("question", nargs="*", help="Question to ask.")
+    parser.add_argument(
+        "--index",
+        default=os.getenv("PINECONE_INDEX_NAME") or os.getenv("PINECONE_INDEX"),
+        help="Pinecone index name. Defaults to PINECONE_INDEX_NAME or PINECONE_INDEX.",
+    )
+    parser.add_argument(
+        "--namespace",
+        default=os.getenv("PINECONE_NAMESPACE", DEFAULT_NAMESPACE),
+        help="Pinecone namespace to query.",
+    )
+    parser.add_argument(
+        "--chat-model",
+        default=os.getenv("OPENAI_CHAT_MODEL", DEFAULT_CHAT_MODEL),
+        help="OpenAI chat model.",
+    )
+    parser.add_argument(
+        "--embedding-model",
+        default=os.getenv("OPENAI_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL),
+        help="OpenAI embedding model.",
+    )
+    parser.add_argument(
+        "--embedding-dimensions",
+        type=int,
+        default=int(
+            os.getenv("OPENAI_EMBEDDING_DIMENSIONS", str(DEFAULT_EMBEDDING_DIMENSIONS))
+        ),
+        help="Embedding dimensions to request from OpenAI.",
+    )
+    parser.add_argument("--top-k", type=int, default=DEFAULT_TOP_K)
+    parser.add_argument("--vector-top-k", type=int, default=DEFAULT_RETRIEVER_TOP_K)
+    parser.add_argument("--bm25-top-k", type=int, default=DEFAULT_RETRIEVER_TOP_K)
+    parser.add_argument("--vector-weight", type=float, default=DEFAULT_VECTOR_WEIGHT)
+    parser.add_argument("--bm25-weight", type=float, default=DEFAULT_BM25_WEIGHT)
+    parser.add_argument(
+        "--confidence-threshold",
+        type=float,
+        default=DEFAULT_CONFIDENCE_THRESHOLD,
+        help="Minimum ensemble score required before asking OpenAI for an answer.",
+    )
+    parser.add_argument(
+        "--source",
+        action="append",
+        default=[],
+        help="Filter by exact source path. Can be repeated.",
+    )
+    parser.add_argument(
+        "--source-name",
+        action="append",
+        default=[],
+        help="Filter by exact source filename. Can be repeated.",
+    )
+    parser.add_argument(
+        "--source-dir",
+        action="append",
+        default=[],
+        help="Filter by exact source directory name. Can be repeated.",
+    )
+    parser.add_argument(
+        "--metadata",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Additional exact metadata filter. Can be repeated.",
+    )
+    parser.add_argument(
+        "--show-sources",
+        action="store_true",
+        help="Log source details after the answer.",
+    )
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging.")
+    return parser.parse_args()
+
+
+def get_question(args: argparse.Namespace) -> str:
+    """Return the question from CLI arguments or an interactive prompt.
+
+    Called by main after parse_args. Raises HybridRagError when no question is
+    provided.
+    """
+    question = " ".join(args.question).strip()
+    if not question:
+        question = input("Question: ").strip()
+    if not question:
+        raise HybridRagError("A question is required.")
+    LOGGER.debug("Question captured: chars=%s words=%s", len(question), len(question.split()))
+    return question
+
+
+def parse_metadata_filters(args: argparse.Namespace) -> dict[str, list[Any]]:
+    """Build exact-match metadata filters from CLI options.
+
+    Called by main before retrieval. The returned filter mapping is used by both
+    build_pinecone_filter and metadata_matches so vector and BM25 retrieval are
+    constrained consistently.
+    """
+    filters: dict[str, list[Any]] = {}
+    add_filter_values(filters, "source", args.source)
+    add_filter_values(filters, "source_name", args.source_name)
+    add_filter_values(filters, "source_dir", args.source_dir)
+
+    for item in args.metadata:
+        if "=" not in item:
+            raise HybridRagError(f"Invalid metadata filter '{item}'. Use KEY=VALUE.")
+        key, value = item.split("=", 1)
+        key = key.strip()
+        value = parse_metadata_value(value.strip())
+        if not key:
+            raise HybridRagError(f"Invalid metadata filter '{item}'. Metadata key is empty.")
+        add_filter_values(filters, key, [value])
+
+    LOGGER.debug("Parsed metadata filters: %s", filters or "none")
+    return filters
+
+
+def parse_metadata_value(value: str) -> Any:
+    """Coerce simple metadata filter values to bool, int, float, or str.
+
+    Called by parse_metadata_filters for --metadata KEY=VALUE arguments.
+    """
+    lowered = value.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        return value
+
+
+def add_filter_values(filters: dict[str, list[Any]], key: str, values: Sequence[Any]) -> None:
+    """Append filter values to a metadata filter mapping.
+
+    Called by parse_metadata_filters for built-in and generic filter options.
+    """
+    clean_values = [value for value in values if value not in ("", None)]
+    if clean_values:
+        filters.setdefault(key, []).extend(clean_values)
+
+
+def build_pinecone_filter(filters: Mapping[str, Sequence[Any]]) -> dict[str, Any] | None:
+    """Convert exact-match filters to Pinecone metadata filter syntax.
+
+    Called by vector_retrieve before querying Pinecone.
+    """
+    if not filters:
+        return None
+
+    pinecone_filter: dict[str, Any] = {}
+    for key, values in filters.items():
+        if len(values) == 1:
+            pinecone_filter[key] = {"$eq": values[0]}
+        else:
+            pinecone_filter[key] = {"$in": list(values)}
+    return pinecone_filter
+
+
+def metadata_matches(metadata: Mapping[str, Any], filters: Mapping[str, Sequence[Any]]) -> bool:
+    """Return whether metadata satisfies all exact-match filters.
+
+    Called by filter_chunks and ensemble_retrieve to keep local BM25 results
+    aligned with Pinecone metadata filtering.
+    """
+    for key, values in filters.items():
+        metadata_value = metadata.get(key)
+        if metadata_value not in values:
+            return False
+    return True
+
+
+def iter_support_files() -> Iterable[Path]:
+    """Yield supported local corpus files from RemindMe directories.
+
+    Called by load_corpus_chunks to build the BM25 retriever corpus.
+    """
+    for directory in sorted(Path(".").glob("RemindMe*")):
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.rglob("*")):
+            if path.is_file() and path.suffix.lower() in TEXT_SUFFIXES:
+                yield path
+
+
+def read_source(path: Path) -> str:
+    """Read a source file and normalize JSON into readable text.
+
+    Called by load_corpus_chunks for each file from iter_support_files.
+    """
+    raw_text = path.read_text(encoding="utf-8", errors="ignore").strip()
+    if path.suffix.lower() != ".json":
+        return raw_text
+    try:
+        data = json.loads(raw_text)
+    except json.JSONDecodeError:
+        return raw_text
+    return json.dumps(data, indent=2, ensure_ascii=False)
+
+
+def split_text(text: str) -> Iterable[str]:
+    """Split text into overlapping chunks for local BM25 retrieval.
+
+    Called by load_corpus_chunks after read_source returns content.
+    """
+    start = 0
+    while start < len(text):
+        end = min(start + CHUNK_SIZE, len(text))
+        chunk = text[start:end].strip()
+        if chunk:
+            yield chunk
+        if end == len(text):
+            break
+        start = end - CHUNK_OVERLAP
+
+
+def load_corpus_chunks(filters: Mapping[str, Sequence[Any]]) -> list[CorpusChunk]:
+    """Load local corpus chunks that match metadata filters.
+
+    Called by main before bm25_retrieve. This function calls iter_support_files,
+    read_source, split_text, and metadata_matches.
+    """
+    chunks: list[CorpusChunk] = []
+    for path in iter_support_files():
+        text = read_source(path)
+        if not text:
+            continue
+        for chunk_index, chunk_text in enumerate(split_text(text)):
+            chunk = CorpusChunk(path, chunk_index, chunk_text)
+            if metadata_matches(chunk.metadata, filters):
+                chunks.append(chunk)
+    LOGGER.debug("Loaded %s local BM25 chunks after metadata filtering.", len(chunks))
+    return chunks
+
+
+def tokenize(text: str) -> list[str]:
+    """Tokenize text for BM25 matching.
+
+    Called by bm25_retrieve for the query and each local corpus chunk.
+    """
+    return [token.lower() for token in TOKEN_RE.findall(text)]
+
+
+def create_query_embedding(
+    client: OpenAI,
+    question: str,
+    model: str,
+    dimensions: int,
+) -> EmbeddingResult:
+    """Create an OpenAI embedding for vector retrieval.
+
+    Called by main before vector_retrieve. Also extracts embedding token usage
+    for the final token summary.
+    """
+    LOGGER.debug(
+        "Creating embedding: model=%s dimensions=%s question_chars=%s",
+        model,
+        dimensions,
+        len(question),
+    )
+    response = client.embeddings.create(
+        model=model,
+        input=question,
+        dimensions=dimensions,
+        encoding_format="float",
+    )
+    embedding = response.data[0].embedding
+    usage = usage_from_embedding_response(response)
+    LOGGER.debug("Created embedding: dimensions=%s tokens=%s", len(embedding), usage.total_tokens)
+    return EmbeddingResult(embedding=embedding, usage=usage)
+
+
+def usage_from_embedding_response(response: Any) -> TokenUsage:
+    """Extract token usage from an OpenAI embedding response.
+
+    Called by create_query_embedding after the embeddings endpoint returns.
+    """
+    usage = get_field(response, "usage", None)
+    if usage is None:
+        return TokenUsage(label="Embedding")
+    prompt_tokens = get_int_field(usage, "prompt_tokens")
+    total_tokens = get_int_field(usage, "total_tokens") or prompt_tokens
+    return TokenUsage(label="Embedding", input_tokens=prompt_tokens, total_tokens=total_tokens)
+
+
+def usage_from_chat_response(response: Any) -> TokenUsage:
+    """Extract token usage from an OpenAI chat completion response.
+
+    Called by generate_answer after the chat model returns.
+    """
+    usage = get_field(response, "usage", None)
+    if usage is None:
+        return TokenUsage(label="Chat completion")
+    return TokenUsage(
+        label="Chat completion",
+        input_tokens=get_int_field(usage, "prompt_tokens"),
+        output_tokens=get_int_field(usage, "completion_tokens"),
+        total_tokens=get_int_field(usage, "total_tokens"),
+    )
+
+
+def vector_retrieve(
+    index: Any,
+    embedding: Sequence[float],
+    namespace: str,
+    top_k: int,
+    filters: Mapping[str, Sequence[Any]],
+) -> list[RetrievalHit]:
+    """Retrieve vector matches from Pinecone using optional metadata filters.
+
+    Called by main after create_query_embedding. This function calls
+    build_pinecone_filter to translate local filter settings to Pinecone syntax.
+    """
+    pinecone_filter = build_pinecone_filter(filters)
+    LOGGER.debug(
+        "Running vector retrieval: namespace=%s top_k=%s filter=%s",
+        namespace,
+        top_k,
+        pinecone_filter or "none",
+    )
+    results = index.query(
+        vector=list(embedding),
+        top_k=top_k,
+        namespace=namespace,
+        filter=pinecone_filter,
+        include_metadata=True,
+    )
+    matches = get_field(results, "matches", []) or []
+
+    hits: list[RetrievalHit] = []
+    for match in matches:
+        metadata = dict(get_field(match, "metadata", {}) or {})
+        text = str(metadata.get("text") or "").strip()
+        if not text:
+            continue
+        hits.append(
+            RetrievalHit(
+                vector_id=str(get_field(match, "id", "")),
+                source=str(metadata.get("source") or metadata.get("source_name") or "Pinecone"),
+                text=text,
+                metadata=metadata,
+                vector_score=max(0.0, float(get_field(match, "score", 0.0) or 0.0)),
+            )
+        )
+    LOGGER.debug("Vector retrieval returned %s usable hits.", len(hits))
+    return normalize_scores(hits, "vector_score")
+
+
+def bm25_retrieve(
+    question: str,
+    chunks: Sequence[CorpusChunk],
+    top_k: int,
+) -> list[RetrievalHit]:
+    """Retrieve local lexical matches with BM25.
+
+    Called by main after load_corpus_chunks. Uses rank_bm25 to score locally
+    chunked source files that already passed metadata filtering.
+    """
+    query_tokens = tokenize(question)
+    if not chunks or not query_tokens:
+        LOGGER.debug("BM25 retrieval skipped: chunks=%s query_tokens=%s", len(chunks), len(query_tokens))
+        return []
+
+    tokenized_corpus = [tokenize(chunk.text) for chunk in chunks]
+    bm25 = BM25Okapi(tokenized_corpus)
+    scores = bm25.get_scores(query_tokens)
+    ranked_indexes = sorted(range(len(scores)), key=lambda index: scores[index], reverse=True)
+
+    hits: list[RetrievalHit] = []
+    for index in ranked_indexes[:top_k]:
+        score = float(scores[index])
+        if score <= 0:
+            continue
+        chunk = chunks[index]
+        hits.append(
+            RetrievalHit(
+                vector_id=chunk.vector_id,
+                source=str(chunk.source_path),
+                text=chunk.text,
+                metadata=chunk.metadata,
+                bm25_score=score,
+            )
+        )
+    LOGGER.debug("BM25 retrieval returned %s usable hits.", len(hits))
+    return normalize_scores(hits, "bm25_score")
+
+
+def normalize_scores(hits: list[RetrievalHit], score_field: str) -> list[RetrievalHit]:
+    """Normalize one score field on retrieval hits to the range 0..1.
+
+    Called by vector_retrieve and bm25_retrieve before the ensemble merge.
+    """
+    max_score = max((float(getattr(hit, score_field)) for hit in hits), default=0.0)
+    if max_score <= 0:
+        return hits
+    for hit in hits:
+        setattr(hit, score_field, float(getattr(hit, score_field)) / max_score)
+    return hits
+
+
+def ensemble_retrieve(
+    vector_hits: Sequence[RetrievalHit],
+    bm25_hits: Sequence[RetrievalHit],
+    vector_weight: float,
+    bm25_weight: float,
+    top_k: int,
+    filters: Mapping[str, Sequence[Any]],
+) -> list[RetrievalHit]:
+    """Merge vector and BM25 hits into a weighted ensemble ranking.
+
+    Called by main after both retrievers complete. It preserves scores from both
+    retrievers when the same chunk appears in each result set and applies
+    metadata_matches as a final consistency check.
+    """
+    merged: dict[str, RetrievalHit] = {}
+    for hit in vector_hits:
+        merged[hit.vector_id] = hit
+
+    for hit in bm25_hits:
+        existing = merged.get(hit.vector_id)
+        if existing:
+            existing.bm25_score = max(existing.bm25_score, hit.bm25_score)
+            if not existing.text:
+                existing.text = hit.text
+            existing.metadata = {**hit.metadata, **existing.metadata}
+        else:
+            merged[hit.vector_id] = hit
+
+    results = []
+    for hit in merged.values():
+        if not metadata_matches(hit.metadata, filters):
+            continue
+        hit.ensemble_score = (
+            vector_weight * hit.vector_score + bm25_weight * hit.bm25_score
+        )
+        results.append(hit)
+
+    ranked = sorted(results, key=lambda item: item.ensemble_score, reverse=True)[:top_k]
+    LOGGER.debug("Ensemble retrieval returned %s hits.", len(ranked))
+    return ranked
+
+
+def should_answer(hits: Sequence[RetrievalHit], threshold: float) -> tuple[bool, str]:
+    """Return whether retrieval confidence is high enough to answer.
+
+    Called by main after ensemble_retrieve and before generate_answer.
+    """
+    if not hits:
+        return False, "No matching context was retrieved."
+    if hits[0].ensemble_score < threshold:
+        return (
+            False,
+            f"Top ensemble score {hits[0].ensemble_score:.3f} is below threshold {threshold:.3f}.",
+        )
+    return True, ""
+
+
+def build_context(hits: Sequence[RetrievalHit]) -> str:
+    """Build numbered context blocks from ensemble retrieval hits.
+
+    Called by generate_answer before asking the chat model.
+    """
+    blocks = []
+    for index, hit in enumerate(hits, 1):
+        blocks.append(
+            f"[{index}] Source: {hit.source}\n"
+            f"Ensemble: {hit.ensemble_score:.3f}; "
+            f"vector: {hit.vector_score:.3f}; bm25: {hit.bm25_score:.3f}\n"
+            f"{hit.text}"
+        )
+    context = "\n\n".join(blocks)
+    LOGGER.debug("Built context: hits=%s chars=%s", len(hits), len(context))
+    return context
+
+
+def generate_answer(
+    client: OpenAI,
+    model: str,
+    question: str,
+    hits: Sequence[RetrievalHit],
+) -> AnswerResult:
+    """Generate an answer grounded in hybrid retrieval context.
+
+    Called by main after should_answer confirms sufficient retrieval confidence.
+    This function calls build_context and usage_from_chat_response.
+    """
+    context = build_context(hits)
+    response = client.chat.completions.create(
+        model=model,
+        temperature=0.0,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a careful customer support assistant. Answer only "
+                    "from the provided hybrid RAG context. Cite source numbers "
+                    "like [1]. If the answer is not in the context, say you do "
+                    "not have enough information and recommend escalation."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Hybrid RAG context:\n{context}\n\nQuestion:\n{question}",
+            },
+        ],
+    )
+    answer = response.choices[0].message.content or ""
+    return AnswerResult(answer=answer, usage=usage_from_chat_response(response))
+
+
+def print_sources(hits: Sequence[RetrievalHit]) -> None:
+    """Log ensemble source details.
+
+    Called by main when --show-sources is provided.
+    """
+    LOGGER.info("\nSources")
+    if not hits:
+        LOGGER.info("- No sources retrieved.")
+        return
+    for index, hit in enumerate(hits, 1):
+        LOGGER.info(
+            "- [%s] %s (ensemble: %.3f, vector: %.3f, bm25: %.3f)",
+            index,
+            hit.source,
+            hit.ensemble_score,
+            hit.vector_score,
+            hit.bm25_score,
+        )
+
+
+def print_token_summary(usages: Sequence[TokenUsage]) -> None:
+    """Log token usage for OpenAI requests made by the script.
+
+    Called by main at the end of refused and answered paths.
+    """
+    total_input_tokens = sum(usage.input_tokens for usage in usages)
+    total_output_tokens = sum(usage.output_tokens for usage in usages)
+    total_tokens = sum(usage.total_tokens for usage in usages)
+    LOGGER.info("\nToken usage")
+    for usage in usages:
+        LOGGER.info(
+            "- %s: %s total (%s input, %s output)",
+            usage.label,
+            f"{usage.total_tokens:,}",
+            f"{usage.input_tokens:,}",
+            f"{usage.output_tokens:,}",
+        )
+    LOGGER.info(
+        "- Total: %s total (%s input, %s output)",
+        f"{total_tokens:,}",
+        f"{total_input_tokens:,}",
+        f"{total_output_tokens:,}",
+    )
+
+
+def validate_args(args: argparse.Namespace) -> None:
+    """Validate numeric options and required index configuration.
+
+    Called by main after parse_args and before clients are created.
+    """
+    if not args.index:
+        raise HybridRagError("Missing PINECONE_INDEX_NAME. Add it to .env or pass --index.")
+    if args.top_k <= 0:
+        raise HybridRagError("--top-k must be greater than zero.")
+    if args.vector_top_k <= 0:
+        raise HybridRagError("--vector-top-k must be greater than zero.")
+    if args.bm25_top_k <= 0:
+        raise HybridRagError("--bm25-top-k must be greater than zero.")
+    if args.vector_weight < 0 or args.bm25_weight < 0:
+        raise HybridRagError("Retriever weights must be zero or greater.")
+    if args.vector_weight + args.bm25_weight <= 0:
+        raise HybridRagError("At least one retriever weight must be greater than zero.")
+
+
+def main() -> int:
+    """Run the hybrid vector plus BM25 RAG CLI.
+
+    Called by the module entrypoint when the script is executed directly.
+    Coordinates argument parsing, metadata filtering, vector retrieval, BM25
+    retrieval, ensemble ranking, answer generation, and token reporting.
+    """
+    args = parse_args()
+    configure_logging(debug=args.debug, level=logging.WARNING)
+    validate_args(args)
+    question = get_question(args)
+    metadata_filters = parse_metadata_filters(args)
+
+    openai_api_key = get_required_env("OPENAI_API_KEY", HybridRagError)
+    pinecone_api_key = get_required_env("PINECONE_API_KEY", HybridRagError)
+    openai_client = OpenAI(api_key=openai_api_key)
+    pinecone_index = Pinecone(api_key=pinecone_api_key).Index(args.index)
+
+    chunks = load_corpus_chunks(metadata_filters)
+    embedding_result = create_query_embedding(
+        client=openai_client,
+        question=question,
+        model=args.embedding_model,
+        dimensions=args.embedding_dimensions,
+    )
+    usages = [embedding_result.usage]
+
+    vector_hits = vector_retrieve(
+        index=pinecone_index,
+        embedding=embedding_result.embedding,
+        namespace=args.namespace,
+        top_k=args.vector_top_k,
+        filters=metadata_filters,
+    )
+    bm25_hits = bm25_retrieve(question, chunks, args.bm25_top_k)
+    hits = ensemble_retrieve(
+        vector_hits=vector_hits,
+        bm25_hits=bm25_hits,
+        vector_weight=args.vector_weight,
+        bm25_weight=args.bm25_weight,
+        top_k=args.top_k,
+        filters=metadata_filters,
+    )
+
+    can_answer, reason = should_answer(hits, args.confidence_threshold)
+    if not can_answer:
+        LOGGER.info("I do not have enough reliable hybrid RAG context to answer without guessing.")
+        LOGGER.info("Reason: %s", reason)
+        LOGGER.info("Escalation: Please route this question to a human support specialist.")
+        if args.show_sources:
+            print_sources(hits)
+        print_token_summary(usages)
+        return 0
+
+    answer_result = generate_answer(
+        client=openai_client,
+        model=args.chat_model,
+        question=question,
+        hits=hits,
+    )
+    usages.append(answer_result.usage)
+    LOGGER.info("%s", answer_result.answer)
+    if args.show_sources:
+        print_sources(hits)
+    print_token_summary(usages)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except KeyboardInterrupt:
+        LOGGER.error("Interrupted.")
+        raise SystemExit(130) from None
+    except HybridRagError as exc:
+        LOGGER.error("Error: %s", exc)
+        raise SystemExit(1) from exc
