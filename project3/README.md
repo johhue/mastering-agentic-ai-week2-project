@@ -216,3 +216,17 @@ Artwork provenance and the exact generation prompt are in `assets/README.md`.
 The comparison uses a four-row HTML table so it follows both appearance modes.
 Custom CSS uses Streamlit component selectors; recheck styling after framework
 upgrades. This appearance control is independent of Streamlit's Settings menu.
+
+### Agent conversations and external URLs
+
+Normal logs show agent handoffs, public progress summaries, Tavily search endpoint
+attempts, actual OpenAI/embedding HTTP requests and response status codes. Source
+URLs returned by Tavily are labeled as evidence links, not direct fetches.
+Set `P3_DEBUG=true` in root `.env` to include bounded agent task/context/evidence,
+validated model responses, and shared-memory artifact exchanges. These are public
+messages and results, not private model chain-of-thought. Existing `P3_LOG_FILE`
+selects the output file; logs also go to the startup terminal. Restart the app after
+changing logging settings. Debug logs contain research content, so retain them accordingly.
+Configured environment credentials are redacted from message payloads; HTTP logs
+omit headers, bodies, URL user information, query strings and fragments. SDK raw
+logging stays disabled. No extra model requests are made for logging.

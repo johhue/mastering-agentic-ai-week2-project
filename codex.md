@@ -445,3 +445,17 @@ Appearance verification: both Streamlit UI tests passed, including dark/light
 switching with unchanged briefing and PDF and a separate session's default.
 The running port-5555 health endpoint returned `ok`. Browser visual inspection
 was unavailable in this session; the generated background asset was inspected.
+
+### Project3 agent observability (2026-10-22)
+
+`project3/observability.py` logs public agent messages and credential-sanitized
+outbound HTTP URLs. Pipeline handoffs include run IDs; DEBUG adds bounded JSON
+research artifacts, task/context/evidence and validated responses. This exposes
+agent communication and progress, not private reasoning. Configure `P3_DEBUG=true`
+and `P3_LOG_FILE` in root `.env`; restart the Streamlit launcher to reload settings.
+OpenAI and mem0 embedding/LLM clients use HTTPX request/response hooks; Tavily logs
+each search attempt and labels returned evidence links separately. URL query,
+fragment, user information and all headers/bodies are excluded from HTTP logs.
+No new dependencies or credentials are needed. PostgreSQL/memory configuration is
+unchanged. Verify with `.venv/bin/python -m unittest discover -s project3/tests`;
+observability tests use a fake HTTP transport and no API credits.

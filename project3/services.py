@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from tavily import TavilyClient
 from project3.config import ResearchError, Settings
 from project3.models import Source, usable_url, utc_now, validate_citations
+from project3.observability import message, observe_client, safe_url
 
 log = logging.getLogger(__name__)
 T = TypeVar('T', bound=BaseModel)
@@ -45,6 +46,9 @@ class SearchService:
             options['days'] = self.settings.news_days
         for attempt in range(3):
             try:
+                log.info('External Tavily POST url=%s attempt=%d topic=%s',
+                         safe_url(str(self.client.base_url).rstrip('/') + '/search'), attempt + 1, topic)
+                message('research agent', 'Tavily', 'Searching for fresh evidence.', {'query': query, 'topic': topic})
                 response = self.client.search(query=query, **options)
                 evidence = []
                 for row in response.get('results', []):
@@ -69,6 +73,9 @@ class SearchService:
                         content=(row.get('content') or '')[:self.settings.source_chars],
                         published_at=published, retrieved_at=utc_now(), topic=topic))
                 log.info('Tavily %s search returned %d usable sources.', topic, len(evidence))
+                for source in evidence:
+                    log.info('Search evidence source=%s url=%s (returned by Tavily; not fetched directly)',
+                             source.id, safe_url(source.url))
                 return evidence
             except Exception as search_error:
                 if attempt == 2:
@@ -86,12 +93,14 @@ class Analyst:
         self.settings = settings
         self.client = OpenAI(api_key=settings.openai_key, base_url=settings.base_url,
                              timeout=settings.timeout, max_retries=2)
+        observe_client(self.client)
 
     def extract(self, schema: type[T], task: str, evidence: list[Source], context: dict | None = None) -> T:
         """Parse structured outputs and reject unsupported source references."""
         payload = json.dumps({'task': task, 'context': context or {},
                               'evidence': [source.model_dump() for source in evidence]}, ensure_ascii=False)
         try:
+            message(schema.__name__, 'LLM', task, {'system': RULES, 'user': json.loads(payload)})
             response = self.client.chat.completions.parse(model=self.settings.model,
                 messages=[{'role': 'system', 'content': RULES}, {'role': 'user', 'content': payload}],
                 response_format=schema, max_completion_tokens=self.settings.max_output, store=False)
@@ -99,6 +108,7 @@ class Analyst:
             if result is None:
                 raise ResearchError('The model declined or did not return the requested structured research.')
             validate_citations(result, evidence)
+            message('LLM', schema.__name__, 'Validated structured research response.', result.model_dump())
             log.info('Validated %s structured output.', schema.__name__)
             return result
         except ResearchError:

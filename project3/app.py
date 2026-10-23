@@ -122,11 +122,11 @@ def show_briefing() -> None:
 
 def main() -> None:
     """Prompt for a company and keep paid research behind an explicit submission."""
-    st.set_page_config(page_title='Competitive Signal', page_icon='🔎', layout='wide')
+    st.set_page_config(page_title='Mastering Agentic AI Project 3A -- Market Research Agent', page_icon='🔎', layout='wide')
     try:
         configure_logging()
         render_appearance()
-        st.title('Competitive Signal')
+        st.title('Mastering Agentic AI Project 3A -- Market Research Agent')
         st.caption('A multi-agent briefing on your company and its competitive landscape')
         mode = st.sidebar.radio('Research mode', ['Live research', 'Offline demo'])
         demo = mode == 'Offline demo'
@@ -142,8 +142,8 @@ def main() -> None:
                     st.write(f'{key}: {"configured" if os.getenv(key) else "missing"}')
                 st.caption('Credentials belong in the repository .env. Start PostgreSQL using project3/compose.yaml.')
         with st.form('company_research'):
-            company = st.text_input('Company to research', value='Northstar CRM (fictional)' if demo else '',
-                                    placeholder='Company name; add its website to disambiguate', max_chars=180,
+            company = st.text_input('Company or Product to Research', value='Northstar CRM (fictional)' if demo else '',
+                                    placeholder='Company or Product Name (Add Website in Parentheses)', max_chars=180,
                                     disabled=demo)
             submitted = st.form_submit_button('Build competitor briefing', type='primary')
         if submitted:
@@ -156,6 +156,7 @@ def main() -> None:
         show_briefing()
     except ResearchError as research_error:
         log.error('Research operation failed (%s).', type(research_error).__name__)
+        log.error('Research error: %s', research_error)
         st.error(str(research_error))
     except Exception as unexpected_error:
         log.error('Unexpected research failure (%s).', type(unexpected_error).__name__)

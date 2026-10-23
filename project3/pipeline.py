@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
 from project3.config import ResearchError
+from project3.observability import message
 from project3.models import Briefing, Claim, Discovery, Profile, Source, Synthesis, utc_now, validate_citations
 
 log = logging.getLogger(__name__)
@@ -59,8 +60,9 @@ class ResearchPipeline:
         company = state['company'].strip()
         if not company or len(company) > 180:
             raise ResearchError('Enter a company name (up to 180 characters); adding its website can resolve ambiguity.')
-        log.info('Orchestrator started research run.')
-        return {'company': company, 'run_id': state.get('run_id') or uuid4().hex}
+        run_id = state.get('run_id') or uuid4().hex
+        message('orchestrator', 'agents', f'Run {run_id}: discover competitors, research profiles in parallel, then compile.', {'company': company})
+        return {'company': company, 'run_id': run_id}
 
     def discover(self, state: ResearchState) -> dict:
         """Agent 1 discovers exactly three competitors through Tavily and saves to mem0."""
@@ -74,6 +76,7 @@ class ResearchPipeline:
             'Do not claim a measured market-share ranking. Specify the market/industry scope and justify each selection.',
             evidence, {'company_input': company})
         validate_citations(discovery, evidence)
+        message('agent 1', 'agents 2 and 3 via mem0', 'Competitor discovery completed.', discovery.model_dump())
         self.memory.write(company, state['run_id'], 'discovery',
                           {'artifact': discovery.model_dump(), 'sources': [row.model_dump() for row in evidence]})
         return {}
@@ -118,9 +121,11 @@ class ResearchPipeline:
         log.info('Agent 2: retrieving competitors from mem0 and researching fresh evidence.')
         saved = self.memory.read(state['company'], state['run_id'], 'discovery')
         discovery = Discovery.model_validate(saved['artifact'])
+        message('mem0', 'agent 2', 'Retrieved competitor discovery.', discovery.model_dump())
         warnings = []
         for index, competitor in enumerate(discovery.competitors):
             profile, sources, notes = self.profile(competitor.name)
+            message('agent 2', 'orchestrator via mem0', f'Competitor {index + 1} researched.', profile.model_dump())
             self.memory.write(state['company'], state['run_id'], f'competitor_{index}',
                 {'artifact': profile.model_dump(), 'sources': [source.model_dump() for source in sources]})
             warnings.extend(notes)
@@ -132,6 +137,7 @@ class ResearchPipeline:
         saved = self.memory.read(state['company'], state['run_id'], 'discovery')
         name = Discovery.model_validate(saved['artifact']).company
         profile, sources, warnings = self.profile(name)
+        message('agent 3', 'orchestrator via mem0', 'Subject company researched.', profile.model_dump())
         self.memory.write(state['company'], state['run_id'], 'target',
             {'artifact': profile.model_dump(), 'sources': [source.model_dump() for source in sources]})
         return {'warnings': warnings}
@@ -158,6 +164,7 @@ class ResearchPipeline:
             {'discovery': discovery.model_dump(), 'profiles': [profile.model_dump() for profile in profiles],
              'warnings': state.get('warnings', [])})
         validate_citations(synthesis, sources)
+        message('orchestrator', 'user', 'Evidence-based briefing compiled.', synthesis.model_dump())
         briefing = Briefing(run_id=state['run_id'], company=discovery.company, generated_at=utc_now(),
             market_scope=discovery.market_scope, target=profiles[0], competitors=profiles[1:], discovery=discovery,
             synthesis=synthesis, sources=sources, warnings=state.get('warnings', []))

@@ -13,6 +13,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 from project3.config import ROOT, ResearchError, Settings
 from project3.models import utc_now
+from project3.observability import observe_client, message
 
 log = logging.getLogger(__name__)
 _INIT_LOCK = RLock()
@@ -132,6 +133,8 @@ class SharedMemory:
             embedding_client = getattr(self.client.embedding_model, 'client', None)
             if embedding_client and hasattr(embedding_client, 'with_options'):
                 self.client.embedding_model.client = embedding_client.with_options(timeout=settings.timeout)
+            for component in (self.client.embedding_model, self.client.llm):
+                observe_client(getattr(component, 'client', None))
             log.info('Shared mem0 PostgreSQL memory initialized.')
         except Exception as memory_init_error:
             raise ResearchError('Shared mem0 memory is unavailable. Start project3 PostgreSQL and verify P3_DATABASE_URL and embedding configuration.') from memory_init_error
@@ -156,6 +159,7 @@ class SharedMemory:
             if not result.get('results'):
                 raise ResearchError('mem0 did not confirm a memory write.')
             log.info('Saved %s agent artifact to shared mem0 memory.', kind)
+            message('agent', 'mem0', f'Run {run_id}: saved {kind}.', payload)
             return [row['id'] for row in result['results']]
         except ResearchError:
             raise
@@ -177,6 +181,7 @@ class SharedMemory:
                 raise ResearchError('Shared memory returned an unexpected artifact type.')
             payload = json.loads(metadata['artifact_json'])
             log.info('Retrieved %s artifact from shared mem0 memory.', kind)
+            message('mem0', 'agent', f'Run {run_id}: retrieved {kind}.', payload)
             return payload
         except ResearchError:
             raise
