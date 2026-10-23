@@ -1,0 +1,18 @@
+services:
+  research-postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: ${P3_POSTGRES_DB:?Set P3_POSTGRES_DB in root .env}
+      POSTGRES_USER: ${P3_POSTGRES_USER:?Set P3_POSTGRES_USER in root .env}
+      POSTGRES_PASSWORD: ${P3_POSTGRES_PASSWORD:?Set P3_POSTGRES_PASSWORD in root .env}
+    ports:
+      - "127.0.0.1:${P3_POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - research-memory:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+volumes:
+  research-memory:

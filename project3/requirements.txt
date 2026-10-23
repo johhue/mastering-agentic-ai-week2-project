@@ -1,0 +1,14 @@
+# Prefer `uv sync` at the repository root for the verified dependency lock.
+langgraph>=1,<2
+mem0ai==2.2.1
+tavily-python>=0.7,<1
+openai>=2.41.0
+pydantic>=2.7
+python-dotenv>=1.2
+psycopg[binary]>=3.2,<4
+psycopg-pool>=3.2,<4
+httpx>=0.28,<1
+streamlit>=1.45
+reportlab>=4,<5
+pypdf>=6,<7
+pymupdf>=1.26,<2
