@@ -459,3 +459,12 @@ fragment, user information and all headers/bodies are excluded from HTTP logs.
 No new dependencies or credentials are needed. PostgreSQL/memory configuration is
 unchanged. Verify with `.venv/bin/python -m unittest discover -s project3/tests`;
 observability tests use a fake HTTP transport and no API credits.
+
+### Project3 clear-history control (2026-10-22)
+
+The Streamlit sidebar includes **Clear chat history**. Its `clear_chat_history`
+callback removes the current session's report, PDF, company input and any
+`messages`/`chat_history` entries. Streamlit reruns the page after the callback;
+appearance and research-mode preferences remain. This clears session state only;
+persistent research memories and server logs are retained. No configuration or
+new dependency is required.

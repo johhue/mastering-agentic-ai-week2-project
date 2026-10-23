@@ -183,7 +183,7 @@ class InterfaceTests(unittest.TestCase):
         with patch('project3.app.configure_logging'):
             app = AppTest.from_file(str(app_path), default_timeout=30).run()
             app.sidebar.radio[0].set_value('Offline demo').run()
-            app.button[0].click().run()
+            next(button for button in app.button if button.label == 'Build competitor briefing').click().run()
         self.assertFalse(app.exception)
         self.assertFalse(app.error)
         self.assertEqual(app.metric[0].value, '3')
@@ -196,7 +196,7 @@ class InterfaceTests(unittest.TestCase):
         with patch.dict(os.environ, {'P3_DEFAULT_THEME': 'light'}):
             app = AppTest.from_file(str(app_path), default_timeout=30).run()
             app.sidebar.radio[0].set_value('Offline demo').run()
-            app.button[0].click().run()
+            next(button for button in app.button if button.label == 'Build competitor briefing').click().run()
             run_id = app.session_state['p3_briefing'].run_id
             pdf = app.session_state['p3_pdf']
             app.sidebar.toggle[0].set_value(True).run()
