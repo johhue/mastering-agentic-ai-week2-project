@@ -309,3 +309,139 @@ We also verified:
    ```
 
 The result is a working OpenAI + Pinecone customer support RAG application with both UI and CLI access, inspection tooling, test-question generation, and hallucination-aware fallback behavior.
+
+## Project3 — Multi-agent Market Research
+
+`project3/` implements Competitive Signal, a Streamlit competitor-analysis system
+with LangGraph, Tavily as its primary web/news source, and open-source mem0 shared
+between three specialist agents and an orchestrator. This is independent of the
+project2 RemindMe application. The full architecture, source limitations, database
+adapter contract, configuration reference and rebuild steps are in
+`project3/README.md`.
+
+From the repository root, rebuild and launch with:
+
+```bash
+uv sync
+docker compose --env-file .env -f project3/compose.yaml -p project3-research up -d --wait
+./project3/start-streamlit.sh
+```
+
+Add the settings in `project3/.env.example` to the root `.env`, preserving existing
+OpenAI credentials. `TAVILY_API_KEY` is required for live research. Use the existing
+`OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`, and separate embedding key,
+model and base URL settings. The endpoint must support Chat Completions structured
+outputs. `P3_DATABASE_URL` connects both vectors and audit history to PostgreSQL.
+Compose uses a separate pgvector-enabled PostgreSQL 17 server on localhost port
+5434 and a persistent volume. Its password is generated in `.env` for this local
+installation; when rebuilding from the example, replace the placeholder password
+and update the client URL to match. Restart Streamlit after changing credentials.
+
+Agent 1 queries Tavily, selects exactly three distinct, relevant competitors and
+saves discovery to mem0. Agent 2 queries that shared memory and researches pricing,
+features/positioning, and recent news for every competitor. Agent 3 researches the
+subject company. Agents 2 and 3 run as parallel graph nodes and save typed artifacts
+back to mem0. The orchestrator joins both branches, retrieves all saved profiles,
+and compiles a cited, structured briefing. PDF and JSON downloads share the same
+underlying artifact. A normal run makes 13 Tavily queries plus bounded retries;
+model and embedding calls use the configured providers. No paid call is made until
+the user explicitly submits a live run.
+
+Mem0 is pinned at `mem0ai==2.2.1`. Its pgvector provider is configured explicitly;
+there is no Qdrant fallback. Since that SDK hardcodes a SQLite history backend,
+`project3/memory.py` injects a PostgreSQL history adapter only during construction,
+under a lock, and restores the SDK module immediately. The real-SDK integration
+test fails if any SQLite connection is attempted. Revalidate that interface before
+upgrading mem0. Artifacts use `infer=False`, compact embedded descriptors and exact
+JSON metadata to preserve company names, citations and source data. Retrieval
+filters include workspace/company namespace, run ID, and artifact kind. New runs
+do not reuse stale research from previous runs.
+
+The application labels facts, inferences and unknowns. Source IDs are checked
+against supplied evidence; news claims must cite dated news inside the configured
+recency window. Dates from ISO and RFC news results are supported. These are
+provenance checks rather than automatic proof of each claim; users should verify
+commercial decisions against original sources. Search failures become collection
+notes or unknown profile fields. Failed discovery, compilation or mandatory mem0
+handoffs stop the run without pretending to complete the research. Logs record
+stages, counts, memory operations and exports without API keys or research bodies.
+Set `P3_DEBUG=true` or `LOG_LEVEL=DEBUG` in `.env` for debugging.
+
+For an offline review, select Offline demo: it runs the same graph using fictional
+companies and explicitly labeled in-process test doubles, not live services or
+persistent memory. The example PDF is generated under `project3/output/pdf/` and
+page renderings are under `project3/tmp/pdfs/`; both directories are ignored by Git.
+PDF export uses ReportLab with escaped content, wrapped comparison cells, source
+references and page numbers. Configure optional Unicode TTF fonts for non-Latin
+writing systems. Render every sample page and inspect it after layout changes.
+
+Validation commands:
+
+```bash
+uv run python -m unittest discover -s project3/tests -v
+P3_TEST_POSTGRES=true uv run python -m unittest project3.tests.test_postgres_memory -v
+```
+
+Offline tests exercise all agent handoffs, three-competitor validation, source-ID
+rejection, run/company isolation, missing research, bounded retries, news freshness,
+Streamlit submission and PDF download, PDF text coverage, and markup escaping.
+The opt-in test uses actual mem0 + PostgreSQL/pgvector with fake embeddings and a
+mocked model, so it spends no API credits. It checks persistence through a fresh
+client and PostgreSQL audit/message history. Test cleanup deletes only IDs returned
+by its own writes and its unique message scope; it never drops a vector collection.
+
+Project3 verification completed on 2026-10-22 (local date): all 13 tests passed
+with the PostgreSQL integration enabled. The real mem0 client recovered exact
+artifacts through a fresh client, kept runs/companies isolated, and never opened
+SQLite. Streamlit demo submission and PDF download passed. Every project3
+function was checked for a docstring, and the three-page fictional sample PDF was
+rendered for visual inspection. Live Tavily/OpenAI research was not exercised:
+`TAVILY_API_KEY` is not configured. No API credits were spent during verification.
+The isolated PostgreSQL/pgvector service is running on localhost port 5434.
+
+### Project3 Streamlit startup
+
+`project3/start-streamlit.sh` resolves the repository root and runs
+`project3/start_streamlit.py` using `.venv/bin/python`. The Python launcher loads
+root `.env` before starting Streamlit, configures application logging, validates
+`P3_STREAMLIT_PORT` (1-65535), and uses `os.execv` to preserve signal handling.
+The configured port is **5555**, and `P3_STREAMLIT_ADDRESS` defaults to
+`127.0.0.1`. Explicit `--server.port` and `--server.address` arguments prevent
+unrelated Streamlit environment settings from overriding the selected listener.
+Run `./project3/start-streamlit.sh`; open `http://127.0.0.1:5555` and stop with
+Ctrl-C. The launcher logs startup/failure without exposing .env secrets.
+
+Startup verification: launched the shell script from `/private/tmp` to confirm
+working-directory independence. Streamlit bound to `127.0.0.1:5555`, and
+`GET /_stcore/health` returned `ok`. Shell syntax and whitespace checks passed.
+
+### Project3 photo background and per-user dark mode
+
+`project3/appearance.py` adds a sidebar Dark theme toggle and local photo
+background, without modifying process-wide Streamlit theme settings. The
+photorealistic futuristic data-center asset is bundled at
+`project3/assets/futuristic-it-background.png`. It was generated with the built-in
+ImageGen tool; the full prompt and provenance are in `project3/assets/README.md`.
+No external image host or image-generation call is used at app runtime.
+
+Appearance defaults are in root `.env`: `P3_DEFAULT_THEME=light`,
+`P3_BACKGROUND_ENABLED=true`, and
+`P3_BACKGROUND_IMAGE=project3/assets/futuristic-it-background.png`.
+The sidebar switch overrides the default for that session and remembers the
+choice in the `appearance` query parameter. Switching themes preserves the
+briefing, run ID and PDF rather than starting another paid research run. Other
+sessions retain their own settings. The photo is embedded as a cached, validated
+PNG/JPEG/WebP data URI, with an 8 MB limit; missing/invalid files fall back to the
+solid theme and emit a safe warning. Light and dark CSS palettes style the
+sidebar, input controls, tabs, status panels, metrics, buttons and report table.
+The comparison is rendered as an HTML table so its colors follow the page theme.
+Recheck Streamlit CSS component selectors when upgrading the framework.
+
+The theme regression test switches light/dark after generating a demo briefing,
+checks that the report/PDF are unchanged, and confirms a separate session starts
+with its own default. No research API calls are made by appearance changes.
+
+Appearance verification: both Streamlit UI tests passed, including dark/light
+switching with unchanged briefing and PDF and a separate session's default.
+The running port-5555 health endpoint returned `ok`. Browser visual inspection
+was unavailable in this session; the generated background asset was inspected.
