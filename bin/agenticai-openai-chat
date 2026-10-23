@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""Ask an OpenAI model one question using the repository's .env settings."""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import os
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from openai import APIConnectionError, APIStatusError, OpenAI
+from project2.common import configure_logging, get_required_env
+
+log = logging.getLogger(__name__)
+
+
+def main() -> int:
+    """Read a question, request an answer, and report failures without secrets."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("question", nargs="?", help="Question (prompts if omitted).", default="Who Are You?")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging.")
+    args = parser.parse_args()
+    try:
+        configure_logging(debug=args.debug)
+        # SDK debug logs can contain request bodies; keep those out of logs.
+        for logger_name in ("openai", "httpx", "httpcore"):
+            logging.getLogger(logger_name).setLevel(logging.WARNING)
+        log.info("OpenAI chat started.")
+        question = (args.question if args.question is not None else input("Question: ")).strip()
+        if not question:
+            raise ValueError("Question must not be empty.")
+        api_key = get_required_env("OPENAI_API_KEY")
+        model = get_required_env("OPENAI_MODEL").strip()
+        if not model:
+            raise ValueError("OPENAI_MODEL must not be empty.")
+        log.debug("Question accepted (%d characters).", len(question))
+        log.info("Sending question to model %s.", model)
+        with OpenAI(api_key=api_key, base_url=os.getenv("OPENAI_BASE_URL") or None) as client:
+            response = client.responses.create(
+                model=model,
+                input=question,
+                instructions=(
+                    "Respond in two clearly labeled sections: 'Answer' and "
+                    "'Brief explanation'. In Brief explanation, give a concise "
+                    "summary of the approach, key assumptions, and any uncertainty. "
+                    "Do not provide private internal reasoning or claim the "
+                    "explanation is a transcript of your thoughts."
+                ),
+                store=False,
+            )
+        answer = response.output_text.strip()
+        if not answer:
+            raise RuntimeError("The model returned no text answer.")
+        print(answer)
+        log.info("Answer received; chat completed.")
+        return 0
+    except (KeyboardInterrupt, EOFError):
+        log.info("Chat cancelled.")
+        return 130
+    except APIConnectionError:
+        log.error("Could not connect to OpenAI. Check connectivity and OPENAI_BASE_URL.")
+    except APIStatusError as api_status_error:
+        log.error("OpenAI request failed (HTTP %s). Check credentials, model access and quota.", api_status_error.status_code)
+    except (ValueError, RuntimeError, OSError) as chat_error:
+        log.error("Chat failed: %s", chat_error)
+    except Exception as unexpected_chat_error:
+        log.error("Unexpected chat failure (%s).", type(unexpected_chat_error).__name__)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
