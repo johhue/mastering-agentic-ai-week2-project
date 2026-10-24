@@ -11,7 +11,7 @@ class DashboardTests(unittest.TestCase):
 
     def test_demo_report_and_question(self):
         """Keep generated reports visible across reruns and display history evidence."""
-        with patch('project2.status_agent.agent.setup_logging'), patch.dict(os.environ, {'PM_USE_LLM': 'false'}):
+        with patch('support_app.status_agent.agent.setup_logging'), patch.dict(os.environ, {'PM_USE_LLM': 'false'}):
             app = AppTest.from_file(str(Path(__file__).resolve().parent.parent / 'bin/pm_status_app.py'), default_timeout=15).run()
             self.assertFalse(app.exception)
             self.assertEqual(app.metric[0].value, '3')

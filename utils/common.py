@@ -28,7 +28,7 @@ LOG_LEVEL_ENV = "LOG_LEVEL"
 LOG_FILE_ENV = "LOGGER_FILE"
 
 
-def configure_logging(debug: bool = False, level: int = logging.INFO) -> None:
+def configure_logging(debug: bool = False, level: int = logging.INFO):
     """Configure console and optional file logging for CLI scripts.
 
     The function loads `.env` before reading logging settings. Set
@@ -41,11 +41,12 @@ def configure_logging(debug: bool = False, level: int = logging.INFO) -> None:
         debug: When true, enable debug output and include the log level prefix.
         level: Fallback non-debug logging level when LOG_LEVEL is not set.
     """
+    logging_format = '%(asctime)s %(levelname)s [%(filename)s:%(lineno)d] [%(name)s] %(message)s'
     load_environment()
     log_level = logging.DEBUG if debug else get_log_level(default=level)
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(
-        logging.Formatter(DEBUG_LOG_FORMAT if debug else DEFAULT_LOG_FORMAT)
+        logging.Formatter(logging_format)
     )
     handlers: list[logging.Handler] = [console_handler]
 
@@ -61,6 +62,7 @@ def configure_logging(debug: bool = False, level: int = logging.INFO) -> None:
         handlers=handlers,
         force=True,
     )
+    return logging
 
 
 def get_log_level(default: int = logging.INFO) -> int:

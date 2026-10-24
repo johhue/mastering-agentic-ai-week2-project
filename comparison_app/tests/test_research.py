@@ -12,21 +12,19 @@ from pydantic import ValidationError
 from pypdf import PdfReader
 from streamlit.testing.v1 import AppTest
 
-from project3.config import ResearchError, Settings
-from project3.demo import DemoAnalyst, DemoMemory, DemoSearch
-from project3.export import filename, markdown_briefing, pdf_briefing
-from project3.memory import SharedMemory
-from project3.models import Claim, Discovery, Source, validate_citations
-from project3.pipeline import ResearchPipeline
-from project3.services import SearchService
+from utils.config import ResearchError, Settings
+from comparison_app.demo import DemoAnalyst, DemoMemory, DemoSearch
+from comparison_app.export import filename, markdown_briefing, pdf_briefing
+from comparison_app.memory_mem0 import SharedMemoryMem0
+from comparison_app.models import Claim, Discovery, Source, validate_citations
+from comparison_app.pipeline import ResearchPipeline
+from comparison_app.services import SearchService
 
 
 def settings() -> Settings:
     """Use fake credentials for offline service-contract tests."""
-    return Settings('test', 'test-model', 'https://example.com/v1', 'test',
-        'text-embedding-3-small', 'https://example.com/v1', 'test',
-        'postgresql://test:test@localhost:5434/test', 8, 3, 30, 10, 500, 1500,
-        'test_research', 'test-workspace')
+    return Settings('test', 'test-model', 'https://example.com/v1', 'test-mem0',
+                    'test', 3, 30, 10, 500, 1500, 'test-workspace')
 
 
 def demo_briefing():
@@ -119,7 +117,7 @@ class SearchTests(unittest.TestCase):
         client.client.search = MagicMock(return_value={'results': []})
         self.assertEqual(client.search('Company'), [])
         client.client.search.side_effect = RuntimeError('private-secret-not-for-logs')
-        with patch('project3.services.time.sleep'), self.assertRaises(ResearchError) as caught:
+        with patch('comparison_app.services.time.sleep'), self.assertRaises(ResearchError) as caught:
             client.search('Company')
         self.assertNotIn('private-secret', str(caught.exception))
         self.assertEqual(client.client.search.call_count, 4)
@@ -130,7 +128,7 @@ class MemoryContractTests(unittest.TestCase):
 
     def test_run_scoped_search_and_exact_artifact(self):
         """Filters must include run, company namespace and artifact kind."""
-        memory = SharedMemory.__new__(SharedMemory)
+        memory = SharedMemoryMem0.__new__(SharedMemoryMem0)
         from threading import RLock
         memory.lock, memory.workspace, memory.client = RLock(), 'workspace', MagicMock()
         payload = {'competitors': ['A', 'B', 'C']}
@@ -180,7 +178,7 @@ class InterfaceTests(unittest.TestCase):
     def test_demo_and_pdf_download(self):
         """A submitted fictional company produces a report and PDF download."""
         app_path = Path(__file__).resolve().parents[1] / 'app.py'
-        with patch('project3.app.configure_logging'):
+        with patch('comparison_app.app.configure_logging'):
             app = AppTest.from_file(str(app_path), default_timeout=30).run()
             app.sidebar.radio[0].set_value('Offline demo').run()
             next(button for button in app.button if button.label == 'Build competitor briefing').click().run()

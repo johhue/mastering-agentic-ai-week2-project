@@ -2,8 +2,8 @@
 import os
 import unittest
 from uuid import uuid4
-from project2.status_agent.core import demo_history
-from project2.status_agent.memory import Memory
+from support_app.status_agent.core import demo_history
+from support_app.status_agent.memory import Memory
 
 
 @unittest.skipUnless(os.getenv('PM_TEST_DATABASE_URL'), 'Set PM_TEST_DATABASE_URL to run PostgreSQL integration')

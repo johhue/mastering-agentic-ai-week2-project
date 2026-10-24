@@ -15,10 +15,11 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import HRFlowable, KeepTogether, Paragraph, SimpleDocTemplate, Table, TableStyle
-from project3.config import ResearchError
-from project3.models import Briefing, Claim
+from utils.config import ResearchError
+from comparison_app.models import Briefing, Claim
+from utils.common import configure_logging, get_required_env
 
-log = logging.getLogger(__name__)
+log = configure_logging()
 NAVY = colors.HexColor('#152B46')
 TEAL = colors.HexColor('#087F8C')
 
@@ -161,14 +162,14 @@ def pdf_briefing(briefing: Briefing) -> bytes:
             story.append(paragraph(f'Published: {source.published_at or "not supplied"} | Retrieved: {source.retrieved_at}', 'ResearchSmall'))
         buffer = BytesIO()
         document = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=48, leftMargin=48,
-            topMargin=42, bottomMargin=46, title=f'{briefing.company} competitor analysis', author='Project3 Research Agents')
+            topMargin=42, bottomMargin=46, title=f'{briefing.company} competitor analysis', author='comparison_app Research Agents')
 
         def footer(canvas, doc) -> None:
             """Draw unobtrusive running page numbers within reserved margins."""
             canvas.saveState()
             canvas.setFont('ResearchBody', 7)
             canvas.setFillColor(NAVY)
-            canvas.drawString(48, 25, 'Project3 | Market research briefing')
+            canvas.drawString(48, 25, 'comparison_app | Market research briefing')
             canvas.drawRightString(A4[0] - 48, 25, f'Page {doc.page}')
             canvas.restoreState()
 

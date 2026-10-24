@@ -15,7 +15,7 @@ from typing import Any
 # Make the shared package available when this file is launched directly.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from project2.common import (
+from utils.common import (
     configure_logging,
     get_field,
     get_int_field,

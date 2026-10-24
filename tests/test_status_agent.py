@@ -6,10 +6,10 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 import httpx
-from project2.status_agent.core import Item, Snapshot, analyze, demo_history, report_markdown
-from project2.status_agent.connectors import Collector, SourceError, collect, notion_value, scope_id
-from project2.status_agent.agent import evidence_answer, weekly_report
-from project2.status_agent.memory import Memory
+from support_app.status_agent.core import Item, Snapshot, analyze, demo_history, report_markdown
+from support_app.status_agent.connectors import Collector, SourceError, collect, notion_value, scope_id
+from support_app.status_agent.agent import evidence_answer, weekly_report
+from support_app.status_agent.memory import Memory
 
 
 class EvidenceTests(unittest.TestCase):
@@ -124,7 +124,7 @@ class ConnectorTests(unittest.TestCase):
                     Collector(client).jira_pages('https://jira.example.com', 'issues', ('u', 'p'), {})
         responses = [httpx.Response(429, headers={'Retry-After': '0'}), httpx.Response(200, json={'ok': True})]
         with httpx.Client(transport=httpx.MockTransport(lambda request: responses.pop(0))) as client:
-            with patch('project2.status_agent.connectors.time.sleep'):
+            with patch('support_app.status_agent.connectors.time.sleep'):
                 self.assertTrue(Collector(client).request('GET', 'https://example.com')['ok'])
 
     def test_partial_failure_is_explicit(self):
@@ -147,7 +147,8 @@ class AgentTests(unittest.TestCase):
 
     def test_llm_receives_history_and_rules(self):
         """The API sees dated evidence with no server-side response storage."""
-        with patch.dict(os.environ, {'PM_USE_LLM': 'true', 'OPENAI_API_KEY': 'test', 'OPENAI_MODEL': 'test'}), patch('project2.status_agent.agent.OpenAI') as model:
+        with patch.dict(os.environ, {'PM_USE_LLM': 'true', 'OPENAI_API_KEY': 'test', 'OPENAI_MODEL': 'test'}), patch(
+                'support_app.status_agent.agent.OpenAI') as model:
             request = model.return_value.__enter__.return_value.responses.create
             request.return_value.output_text = 'Evidence-based summary'
             self.assertEqual(evidence_answer(demo_history(), 'What is stuck?'), 'Evidence-based summary')
@@ -166,7 +167,7 @@ class AgentTests(unittest.TestCase):
         """Reject other databases and keep scope and evidence out of SQL interpolation."""
         with self.assertRaises(ValueError):
             Memory('sqlite:///history.db', 'scope')
-        with patch('project2.status_agent.memory.psycopg.connect') as connect:
+        with patch('support_app.status_agent.memory.psycopg.connect') as connect:
             memory = Memory('postgresql://example/test', "scope'quoted")
             memory.save(demo_history()[-1])
             call = connect.return_value.__enter__.return_value.execute.call_args

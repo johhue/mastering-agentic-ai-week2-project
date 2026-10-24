@@ -4,7 +4,7 @@ from __future__ import annotations
 from copy import deepcopy
 from threading import RLock
 
-from project3.models import Claim, Competitor, Discovery, Profile, Source, Synthesis, utc_now
+from comparison_app.models import Claim, Competitor, Discovery, Profile, Source, Synthesis, utc_now
 
 
 class DemoMemory:

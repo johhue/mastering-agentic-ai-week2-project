@@ -6,7 +6,7 @@ import unittest
 import uuid
 from pathlib import Path
 
-from project2.common import (
+from utils.common import (
     compact_text, iter_text_files, read_source, read_text, split_text,
     stable_vector_id, tokenize,
 )

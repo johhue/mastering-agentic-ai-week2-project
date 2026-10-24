@@ -5,8 +5,9 @@ import json
 import logging
 import os
 from urllib.parse import urlsplit, urlunsplit
+from utils.common import configure_logging, get_required_env
 
-log = logging.getLogger(__name__)
+log = configure_logging()
 
 
 def safe_text(value: object) -> str:
@@ -58,5 +59,5 @@ def observe_client(client) -> None:
 def message(sender: str, recipient: str, summary: str, payload: object = None) -> None:
     """Log public agent communication; detailed payloads are opt-in DEBUG data."""
     log.info('Agent message %s -> %s: %s', sender, recipient, safe_text(summary))
-    if payload is not None and log.isEnabledFor(logging.DEBUG):
+    if payload is not None:
         log.debug('Agent conversation %s -> %s: %s', sender, recipient, safe_text(payload))

@@ -19,8 +19,6 @@ dependencies = [
     "mem0ai==2.2.1",
     "openai>=2.41.0",
     "pinecone>=7.3.0",
-    "psycopg-pool>=3.2,<4",
-    "psycopg[binary]>=3.2,<4",
     "pymupdf>=1.26,<2",
     "pypdf>=6,<7",
     "python-dotenv>=1.2.2",

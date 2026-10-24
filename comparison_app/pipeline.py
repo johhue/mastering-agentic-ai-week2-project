@@ -5,13 +5,13 @@ import logging
 import operator
 from typing import Annotated, TypedDict
 from uuid import uuid4
+from utils.common import configure_logging, get_required_env
 
+log = configure_logging()
 from langgraph.graph import END, START, StateGraph
-from project3.config import ResearchError
-from project3.observability import message
-from project3.models import Briefing, Claim, Discovery, Profile, Source, Synthesis, utc_now, validate_citations
-
-log = logging.getLogger(__name__)
+from utils.config import ResearchError
+from comparison_app.observability import message
+from comparison_app.models import Briefing, Claim, Discovery, Profile, Source, Synthesis, utc_now, validate_citations
 
 
 class ResearchState(TypedDict, total=False):

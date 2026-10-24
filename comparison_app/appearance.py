@@ -6,11 +6,12 @@ from functools import lru_cache
 import logging
 import os
 from pathlib import Path
+from utils.common import configure_logging, get_required_env
 
 import streamlit as st
-from project3.config import ROOT
+from utils.config import ROOT
 
-log = logging.getLogger(__name__)
+log = configure_logging()
 
 
 @lru_cache(maxsize=4)
@@ -32,7 +33,7 @@ def background_uri() -> str:
     """Load the configured photo, falling back gracefully if it is unavailable."""
     if os.getenv('P3_BACKGROUND_ENABLED', 'true').lower() != 'true':
         return ''
-    path = Path(os.getenv('P3_BACKGROUND_IMAGE', 'project3/assets/futuristic-it-background.png')).expanduser()
+    path = Path(os.getenv('P3_BACKGROUND_IMAGE', 'comparison_app/assets/futuristic-it-background.png')).expanduser()
     if not path.is_absolute():
         path = ROOT / path
     try:

@@ -6,7 +6,7 @@ from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, model_validator
-from project3.config import ResearchError
+from utils.config import ResearchError
 
 
 class Source(BaseModel):

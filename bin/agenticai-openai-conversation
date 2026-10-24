@@ -12,9 +12,10 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from openai import APIConnectionError, APIStatusError, OpenAI
-from project2.common import configure_logging, get_required_env
+from utils.common import configure_logging, get_required_env
 
-log = logging.getLogger(__name__)
+log = configure_logging()
+
 INSTRUCTIONS = (
     "Respond in sections labeled 'Answer' and 'Brief explanation'. Give a "
     "concise explanation of the approach, key assumptions, and uncertainty. "
@@ -74,7 +75,6 @@ def main() -> int:
     parser.add_argument("--debug", action="store_true", help="Enable application debug logs.")
     args = parser.parse_args()
     try:
-        configure_logging(debug=args.debug)
         for logger_name in ("openai", "httpx", "httpcore"):
             logging.getLogger(logger_name).setLevel(logging.WARNING)
         api_key = get_required_env("OPENAI_API_KEY")

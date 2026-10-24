@@ -9,15 +9,18 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import streamlit as st
-from project3.config import ResearchError, Settings, configure_logging, load_environment
-from project3.demo import DemoAnalyst, DemoMemory, DemoSearch
-from project3.export import citation_numbers, claim_text, filename, markdown_briefing, pdf_briefing
-from project3.memory import SharedMemory
-from project3.pipeline import ResearchPipeline
-from project3.services import Analyst, SearchService
-from project3.appearance import render_appearance
+from utils.config import ResearchError, Settings, load_environment
+from utils.common import configure_logging, get_required_env
+from comparison_app.demo import DemoAnalyst, DemoMemory, DemoSearch
+from comparison_app.export import citation_numbers, claim_text, filename, markdown_briefing, pdf_briefing
+from comparison_app.memory_mem0 import SharedMemoryMem0
+from comparison_app.memory_filesystem import SharedMemoryFileSystem
+from comparison_app.pipeline import ResearchPipeline
+from comparison_app.services import Analyst, SearchService
+from comparison_app.appearance import render_appearance
 
-log = logging.getLogger(__name__)
+log = configure_logging()
+
 STAGES = {'orchestrator_plan': 'Orchestrator planned the research run',
           'agent_1_discovery': 'Agent 1 saved three competitors to shared memory',
           'agent_2_competitors': 'Agent 2 researched all three competitors',
@@ -42,7 +45,8 @@ def research(company: str, demo: bool) -> None:
             pipeline = ResearchPipeline(DemoSearch(), DemoAnalyst(), memory)
         else:
             settings = Settings.from_env()
-            memory = SharedMemory(settings)
+            # memory = SharedMemoryMem0(settings)
+            memory = SharedMemoryFileSystem(settings)
             analyst = Analyst(settings)
             pipeline = ResearchPipeline(SearchService(settings), analyst, memory, settings.news_days)
         with st.status('Researching the competitive landscape…', expanded=True) as progress:
@@ -129,9 +133,10 @@ def show_briefing() -> None:
 
 def main() -> None:
     """Prompt for a company and keep paid research behind an explicit submission."""
+    log.info("Starting ...")
     st.set_page_config(page_title='Mastering Agentic AI Project 3A -- Market Research Agent', page_icon='🔎', layout='wide')
     try:
-        configure_logging()
+        log.info("Starting ...")
         render_appearance()
         st.title('Mastering Agentic AI Project 3A -- Market Research Agent')
         st.caption('A multi-agent briefing on your company and its competitive landscape')
@@ -139,15 +144,15 @@ def main() -> None:
         demo = mode == 'Offline demo'
         st.sidebar.markdown('**The research team**\n\n1. Discover competitors\n2. Research competitors\n3. Profile your company\n4. Compile the briefing')
         if demo:
-            st.info('Offline preview using fictional companies. No Tavily, OpenAI, PostgreSQL or mem0 calls are made.')
+            st.info('Offline preview using fictional companies. No Tavily, OpenAI or mem0 calls are made.')
         else:
             st.info('Live research uses Tavily, OpenAI and shared mem0 memory. A full run makes '
                     '13 search requests plus retries, along with model and embedding calls.')
             with st.sidebar.expander('Connection setup'):
                 load_environment()
-                for key in ('TAVILY_API_KEY', 'OPENAI_API_KEY', 'MEM0_API_KEY', 'PINECONE_API_KEY', 'P3_DATABASE_URL'):
+                for key in ('TAVILY_API_KEY', 'OPENAI_API_KEY', 'MEM0_API_KEY'):
                     st.write(f'{key}: {"configured" if os.getenv(key) else "missing"}')
-                st.caption('Credentials belong in the repository .env. Start PostgreSQL using project3/compose.yaml.')
+                st.caption('Credentials belong in the repository .env. Memory is stored in hosted mem0.ai.')
         with st.form('company_research'):
             company = st.text_input('Company or Product to Research', value='Northstar CRM (fictional)' if demo else '',
                                     placeholder='Company or Product Name (Add Website in Parentheses)', max_chars=180,
@@ -168,6 +173,7 @@ def main() -> None:
         log.error('Research error: %s', research_error)
         st.error(str(research_error))
     except Exception as unexpected_error:
+        log.error(f"Error: {unexpected_error}")
         log.error('Unexpected research failure (%s).', type(unexpected_error).__name__)
         st.error('Research could not complete. Check service access and the application logs. '
                  f'Error type: {type(unexpected_error).__name__}.')

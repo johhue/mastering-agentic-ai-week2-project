@@ -16,7 +16,7 @@ import streamlit as st
 # Make the shared package available when this file is launched directly.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from project2.common import (
+from utils.common import (
     load_environment,
     iter_support_files,
     read_source,
