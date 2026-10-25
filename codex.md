@@ -1,5 +1,42 @@
 # Codex Build Log
 
+## Streamlit application progress logging
+
+`comparison_app/app.py` logs at INFO before page setup, appearance/mode controls,
+connection indicators, form handling, service initialization, graph streaming,
+session persistence, PDF creation, report sections, downloads and client cleanup.
+Briefing rendering includes run IDs; DEBUG adds per-profile rendering and empty
+session details. Stage messages describe completed graph updates before UI display;
+the pipeline itself logs before executing graph stages. New messages omit input,
+credentials and report bodies. Unexpected errors log their type rather than raw
+exception text. Existing shared logging settings and research behavior are retained.
+
+## Pipeline progress logging
+
+`comparison_app/pipeline.py` logs at INFO before every graph node and before
+search, extraction, citation validation, memory read/write and briefing assembly.
+Run IDs correlate concurrent branches; numbered profile searches identify pricing,
+features/positioning and news, and competitor indices identify profile progress.
+WARNING records partial-search and unverified-profile fallbacks. Logs contain
+operation names and counts rather than prompts, credentials or evidence bodies.
+The pipeline uses a module logger and leaves logging configuration to callers.
+The CLI's LOG_LEVEL/P3_DEBUG controls continue to apply. `profile` accepts an
+optional run_id for correlation while preserving standalone calls.
+
+## Comparison research CLI
+
+`bin/agenticai-comparison-research` invokes the current `ResearchPipeline.graph`
+with max_concurrency=2. Usage: `uv run python bin/agenticai-comparison-research
+"Company (website)"`. It uses `utils.config.Settings`, the live Tavily/OpenAI
+services, and `comparison_app.memory_mem0.SharedMemoryMem0`. Configure live
+credentials in root .env. --demo runs the same graph with fictional services,
+marks output demo=true, and needs no API credentials. Default output is JSON
+on stdout; --format markdown renders the same briefing as the UI.
+--output PATH exclusively creates a file before API calls, preserving existing
+files and surfacing invalid destinations before paid work. Failed runs can leave
+an empty file. Logs use shared utils.common logging (LOGGER_FILE, LOG_LEVEL),
+with P3_DEBUG enabling debug. Live clients close even after graph failures.
+
 ## Shared Corpus Helpers
 
 `project2/common.py` owns corpus directory discovery, file iteration, safe UTF-8

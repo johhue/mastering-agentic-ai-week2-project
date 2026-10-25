@@ -28,7 +28,7 @@ class SharedMemoryFileSystem:
         os.environ['MEM0_TELEMETRY'] = 'false'
         os.environ.setdefault('MEM0_DIR', str(ROOT / 'comparison_app/.runtime/mem0'))
 
-    def namespace(self, company: str) -> str:
+    def get_namespace(self, company: str) -> str:
         """Scope memory to a workspace and normalized company without cross-run reuse."""
         return hashlib.sha256(f'{self.workspace}:{company.strip().casefold()}'.encode()).hexdigest()
 
@@ -47,10 +47,11 @@ class SharedMemoryFileSystem:
             with self.lock:
 
                 memory_element_id = f"{company}_{run_id}_{kind}"
+                user_id = self.get_namespace(company)
 
                 # result = self.client.add([{'role': 'assistant', 'content':
                 #     f'Market research {kind} for {company}. Run {run_id}.'}],
-                #     user_id=self.namespace(company), run_id=run_id, infer=False,
+                #     user_id=user_id, run_id=run_id, infer=False,
 
                 metadata = {'kind': kind, 'artifact_json': payload,
                           'observed_at': utc_now()}
@@ -91,7 +92,7 @@ class SharedMemoryFileSystem:
         """Release the hosted mem0 HTTP connection pool."""
         try:
             # self.transport.close()
-            log.info(f"Closing file (this does nothing).")
+            log.info(f"Wrapping up file-based memory usage.")
         except Exception as memory_close_error:
-            log.error(f"Got a memory close error: {memory_close_error}.")
-            raise ResearchError('Could not close the mem0.ai client.') from memory_close_error
+            log.error(f"Got a file close error: {memory_close_error}.")
+            raise ResearchError('Could not close the file.') from memory_close_error

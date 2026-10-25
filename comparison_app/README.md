@@ -1,5 +1,23 @@
 # Competitive Signal
 
+## Command-line research
+
+```bash
+uv run python bin/agenticai-comparison-research "Acme (https://example.com)"
+uv run python bin/agenticai-comparison-research "Acme" --format markdown --output briefing.md
+uv run python bin/agenticai-comparison-research "Demo" --demo --output demo.json
+```
+
+Live mode runs the same graph as Streamlit, including hosted mem0 handoffs,
+and uses Tavily, OpenAI and mem0 quotas. Configure `OPENAI_API_KEY`,
+`OPENAI_MODEL`, `OPENAI_BASE_URL`, `TAVILY_API_KEY` and `MEM0_API_KEY` in root
+`.env`. `--demo` uses fictional companies and no external service calls.
+JSON is the default output; logs go to stderr and `LOGGER_FILE` when configured.
+Set `LOG_LEVEL=DEBUG` or `P3_DEBUG=true` in `.env` for debugging.
+`--output` creates a new UTF-8 file; existing files are preserved. Its parent
+directory must exist. A failed run may leave an empty output file; remove it
+before retrying. Exit code 0 indicates success; failures return nonzero.
+
 Streamlit market research using LangGraph, Tavily, OpenAI and hosted mem0.ai.
 No PostgreSQL server, Docker service, pgvector or local database is required.
 
@@ -45,7 +63,7 @@ log files; JSON goes to stdout and can be redirected to a file.
 Agent 1 discovers three competitors; Agents 2 and 3 research competitors and the
 subject company in parallel. All handoffs go through `SharedMemory` in
 `memory_mem0.py`. The orchestrator retrieves profiles and builds a
-cited briefing with PDF and JSON downloads. `services.py` owns Tavily searches
+cited briefing with PDF and JSON downloads. `search_service.py` owns Tavily searches
 and structured OpenAI extraction; it does not own persistence.
 
 Memory uses `mem0.MemoryClient` from pinned `mem0ai==2.2.1`. `infer=False`

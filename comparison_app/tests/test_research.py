@@ -18,7 +18,7 @@ from comparison_app.export import filename, markdown_briefing, pdf_briefing
 from comparison_app.memory_mem0 import SharedMemoryMem0
 from comparison_app.models import Claim, Discovery, Source, validate_citations
 from comparison_app.pipeline import ResearchPipeline
-from comparison_app.services import SearchService
+from comparison_app.search_service import TavilySearchService
 
 
 def settings() -> Settings:
@@ -99,7 +99,7 @@ class SearchTests(unittest.TestCase):
 
     def test_news_dates_and_non_http_links(self):
         """Keep recent ISO/RFC dates and drop old, undated or unsafe news URLs."""
-        client = SearchService(settings())
+        client = TavilySearchService(settings())
         now = datetime.now(timezone.utc)
         values = [now.isoformat(), now.strftime('%a, %d %b %Y %H:%M:%S GMT'),
                   (now - timedelta(days=60)).isoformat(), '']
@@ -113,11 +113,11 @@ class SearchTests(unittest.TestCase):
 
     def test_empty_search_and_retry_budget(self):
         """Do not manufacture search results and stop after bounded retries."""
-        client = SearchService(settings())
+        client = TavilySearchService(settings())
         client.client.search = MagicMock(return_value={'results': []})
         self.assertEqual(client.search('Company'), [])
         client.client.search.side_effect = RuntimeError('private-secret-not-for-logs')
-        with patch('comparison_app.services.time.sleep'), self.assertRaises(ResearchError) as caught:
+        with patch('comparison_app.search_service.py.time.sleep'), self.assertRaises(ResearchError) as caught:
             client.search('Company')
         self.assertNotIn('private-secret', str(caught.exception))
         self.assertEqual(client.client.search.call_count, 4)
