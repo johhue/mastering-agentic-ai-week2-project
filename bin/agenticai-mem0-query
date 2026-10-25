@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""Inspect a page of hosted mem0.ai memories or retrieve one memory by ID."""
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+from pathlib import Path
+import sys
+from types import SimpleNamespace
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from utils.config import ResearchError, integer, required
+from utils.common import configure_logging, get_required_env
+from comparison_app.memory_mem0 import SharedMemory
+
+log = configure_logging()
+
+
+def positive_integer(value: str) -> int:
+    """Accept positive pagination arguments with an actionable CLI error."""
+    try:
+        number = int(value)
+        if number < 1:
+            raise ValueError('not positive')
+        return number
+    except ValueError as argument_error:
+        raise argparse.ArgumentTypeError('Must be a positive integer.') from argument_error
+
+
+def main() -> int:
+    """Read a scoped page or memory ID, printing complete JSON without changing data."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--company', help='Company namespace in P3_WORKSPACE')
+    parser.add_argument('--run-id', help='Restrict listing to one research run')
+    parser.add_argument('--kind', help='Artifact kind, such as discovery or briefing')
+    parser.add_argument('--memory-id', help='Retrieve one memory by its mem0 ID')
+    parser.add_argument('--page', type=positive_integer, default=1)
+    parser.add_argument('--page-size', type=positive_integer, default=20)
+    args = parser.parse_args()
+    if args.page_size > 100:
+        parser.error('--page-size must be between 1 and 100.')
+    if args.memory_id and any((args.company, args.run_id, args.kind)):
+        parser.error('--memory-id cannot be combined with listing filters.')
+    if any(value is not None and not value.strip()
+           for value in (args.company, args.run_id, args.kind, args.memory_id)):
+        parser.error('Filter values must not be blank.')
+    memory = None
+    try:
+        configure_logging()
+        settings = SimpleNamespace(mem0_key=required('MEM0_API_KEY'),
+            workspace=os.getenv('P3_WORKSPACE', 'market-research'),
+            timeout=integer('P3_TIMEOUT_SECONDS', 60, maximum=300))
+        memory = SharedMemory(settings)
+        if args.memory_id:
+            result = memory.client.get(args.memory_id)
+            log.info('Retrieved one hosted mem0 memory.')
+        else:
+            filters = {'user_id': memory.namespace(args.company) if args.company else '*'}
+            if args.run_id:
+                filters['run_id'] = args.run_id
+            if args.kind:
+                filters['kind'] = args.kind
+            result = memory.client.get_all(filters=filters, page=args.page, page_size=args.page_size)
+            log.info('Retrieved mem0 listing page=%d page_size=%d.', args.page, args.page_size)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    except ResearchError as configuration_error:
+        log.error('%s', configuration_error)
+        return 1
+    except Exception as query_error:
+        log.error('Memory inspection failed (%s). Check filters, MEM0_API_KEY and service access.',
+                  type(query_error).__name__)
+        return 1
+    finally:
+        if memory is not None:
+            try:
+                memory.close()
+            except Exception as cleanup_error:
+                log.warning('Memory client cleanup failed (%s).', type(cleanup_error).__name__)
+
+
+if __name__ == '__main__':
+    sys.exit(main())

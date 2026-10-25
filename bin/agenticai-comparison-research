@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""Run the comparison research graph from the command line."""
+from __future__ import annotations
+
+import argparse
+from contextlib import ExitStack
+import logging
+import os
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from utils.common import configure_logging
+from utils.config import ResearchError, Settings, load_environment
+
+log = logging.getLogger(__name__)
+
+
+def main() -> int:
+    """Run live or fictional research, output a briefing and release service clients."""
+
+    # parser = argparse.ArgumentParser(description=__doc__)
+    # parser.add_argument('company', type=str,
+    #                     help='Company name, optionally including its website',
+    #                     default="Toyota")
+    # parser.add_argument('--demo', action='store_true', help='Use fictional offline services without API calls')
+    # parser.add_argument('--format', choices=('json', 'markdown'), default='json')
+    # parser.add_argument('--output', type=Path, help='Write to a new file instead of stdout (existing files are preserved)',
+    #                     default="/var/tmp/research_output.json")
+
+
+    # args = parser.parse_args()
+    # company = args.company.strip()
+
+    company="Toyota"
+    output_format="json"
+    output_file=Path("/var/tmp/research_output.json")
+    demo=False
+
+    # if not company or len(company) > 180:
+    #     parser.error('Company must contain 1 to 180 characters.')
+
+    clients = []
+    try:
+
+        load_environment()
+        from comparison_app.pipeline import ResearchPipeline
+        from comparison_app.demo import DemoAnalyst, DemoMemory, DemoSearch
+        # from comparison_app.memory_mem0 import SharedMemoryMem0
+        from comparison_app.memory_filesystem import SharedMemoryFileSystem
+        from comparison_app.search_service import TavilySearchService
+        from comparison_app.analyst_service import Analyst
+        configure_logging(debug=os.getenv('P3_DEBUG', 'false').lower() == 'true')
+
+        for name in ('httpx', 'httpcore', 'openai', 'mem0', 'posthog', 'urllib3'):
+            logging.getLogger(name).setLevel(logging.CRITICAL)
+
+        with ExitStack() as files:
+
+            # output = files.enter_context(output_file.expanduser().open('x', encoding='utf-8')) if output_file else sys.stdout
+
+            if demo:
+                search, analyst, memory = DemoSearch(), DemoAnalyst(), DemoMemory()
+                news_days = 30
+                log.warning('SYNTHETIC DEMO: output describes fictional companies, not the requested company.')
+
+            else:
+
+                settings = Settings.from_env()
+
+                memory = SharedMemoryFileSystem(settings)
+                clients.append(memory)
+
+                analyst = Analyst(settings)
+                clients.append(analyst)
+
+                search, news_days = TavilySearchService(settings), settings.news_days
+
+            log.info("Starting Pipeline ...")
+
+            pipeline = ResearchPipeline(search, analyst, memory, news_days)
+
+            log.info('Starting comparison for company (%s) research (demo=%s). Output to %s', company,demo,output_file)
+            state = pipeline.graph.invoke({'company': company, 'warnings': []}, config={'max_concurrency': 2})
+            log.info(f"Done")
+            briefing = state['briefing'].model_copy(update={'demo': demo})
+
+            # if output_format == 'markdown':
+            #    from comparison_app.export import markdown_briefing
+            #    content = markdown_briefing(briefing)
+            #else:
+            #    content = briefing.model_dump_json(indent=2)
+
+            #output.write(content + '\n')
+            #output.flush()
+
+            log.info('Comparison research complete. Run ID: %s.', briefing.run_id)
+
+        return 0
+
+    except ResearchError as research_error:
+        log.error(f"Error: {research_error}.")
+        log.error('Comparison research failed: %s', research_error)
+        return 1
+
+    except Exception as cli_error:
+        log.error('Comparison research failed (%s). Check service access, configuration and output path.',
+                  type(cli_error).__name__)
+        return 1
+    finally:
+        for client in reversed(clients):
+            try:
+                client.close()
+            except Exception as cleanup_error:
+                log.warning('Research client cleanup failed (%s).', type(cleanup_error).__name__)
+
+
+if __name__ == '__main__':
+    sys.exit(main())

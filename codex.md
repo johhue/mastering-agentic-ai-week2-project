@@ -382,3 +382,18 @@ debugging; P3_LOG_FILE selects optional file output. Keep configuration in .env.
 Offline demo requires no credentials. Run `uv run python -m unittest discover
 -s comparison_app/tests -v` for offline graph, hosted HTTP contract, UI and PDF
 checks. No live service calls are required for these tests.
+
+## Current comparison application documentation (2026-10-25)
+
+The current operational references are comparison_app/README.md and
+comparison_app/docs/{architecture,configuration,runbook}.md. Architecture includes
+Mermaid network and graph diagrams. These documents supersede older build-history
+CLI examples: the current comparison-research command hardcodes Toyota and
+filesystem memory, with argument parsing and report-file export commented out.
+The UI selects MEMORY_METHOD. The filesystem backend uses /var/tmp filenames;
+hosted memory uses SharedMemoryMem0. The memory CLI imports are currently stale.
+Use the Python Streamlit launcher directly for its configured final listener.
+The configuration reference records LOGGER_FILE/P3_LOG_FILE and environment-load
+precedence differences. Future builders should reconcile these known limitations
+before relying on older intended behavior. Documentation does not change runtime
+code, migrate data or execute live services.
