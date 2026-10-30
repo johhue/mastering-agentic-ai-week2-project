@@ -2,7 +2,7 @@
 """Inspect a page of hosted mem0.ai memories or retrieve one memory by ID."""
 from __future__ import annotations
 
-import argparse
+from optparse import Values
 import json
 import logging
 import os
@@ -13,33 +13,21 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from utils.config import ResearchError, integer, required
-from utils.common import configure_logging, get_required_env
-from comparison_app.memory_mem0 import SharedMemory
+from utils.cli import parse_options, create_parser, configure_cli_logging
 
-log = configure_logging()
-
-
-def positive_integer(value: str) -> int:
-    """Accept positive pagination arguments with an actionable CLI error."""
-    try:
-        number = int(value)
-        if number < 1:
-            raise ValueError('not positive')
-        return number
-    except ValueError as argument_error:
-        raise argparse.ArgumentTypeError('Must be a positive integer.') from argument_error
+log = logging.getLogger(__name__)
 
 
-def main() -> int:
-    """Read a scoped page or memory ID, printing complete JSON without changing data."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--company', help='Company namespace in P3_WORKSPACE')
-    parser.add_argument('--run-id', help='Restrict listing to one research run')
-    parser.add_argument('--kind', help='Artifact kind, such as discovery or briefing')
-    parser.add_argument('--memory-id', help='Retrieve one memory by its mem0 ID')
-    parser.add_argument('--page', type=positive_integer, default=1)
-    parser.add_argument('--page-size', type=positive_integer, default=20)
-    args = parser.parse_args()
+def parse_args(argv: list[str] | None = None) -> Values:
+    """Parse command options before initializing logging or external clients."""
+    parser = create_parser(description=__doc__, argv=argv, prog=Path(__file__).name)
+    parser.add_option('--company', help='Company namespace in P3_WORKSPACE')
+    parser.add_option('--run-id', help='Restrict listing to one research run')
+    parser.add_option('--kind', help='Artifact kind, such as discovery or briefing')
+    parser.add_option('--memory-id', help='Retrieve one memory by its mem0 ID')
+    parser.add_option('--page', type="positive_int", default=1)
+    parser.add_option('--page-size', type="positive_int", default=20)
+    args = parse_options(parser, argv)
     if args.page_size > 100:
         parser.error('--page-size must be between 1 and 100.')
     if args.memory_id and any((args.company, args.run_id, args.kind)):
@@ -47,13 +35,20 @@ def main() -> int:
     if any(value is not None and not value.strip()
            for value in (args.company, args.run_id, args.kind, args.memory_id)):
         parser.error('Filter values must not be blank.')
+    return args
+
+
+def main() -> int:
+    """Read a scoped page or memory ID, printing complete JSON without changing data."""
+    args = parse_args()
     memory = None
     try:
-        configure_logging()
+        from comparison_app.memory_mem0 import SharedMemoryMem0
+        configure_cli_logging(args)
         settings = SimpleNamespace(mem0_key=required('MEM0_API_KEY'),
             workspace=os.getenv('P3_WORKSPACE', 'market-research'),
             timeout=integer('P3_TIMEOUT_SECONDS', 60, maximum=300))
-        memory = SharedMemory(settings)
+        memory = SharedMemoryMem0(settings)
         if args.memory_id:
             result = memory.client.get(args.memory_id)
             log.info('Retrieved one hosted mem0 memory.')

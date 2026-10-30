@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Run the comparison research graph from the command line."""
+"""Run live comparison research or a fictional offline demo from the terminal."""
 from __future__ import annotations
 
-import argparse
+from optparse import Values
 from contextlib import ExitStack
 import logging
 import os
@@ -11,102 +11,78 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from utils.common import configure_logging
-from utils.config import ResearchError, Settings, load_environment
+from utils.cli import parse_options, configure_cli_logging, create_parser
+from utils.config import ResearchError, Settings
 
 log = logging.getLogger(__name__)
 
 
+def parse_args(argv: list[str] | None = None) -> Values:
+    """Parse and validate research options before loading service clients."""
+    parser = create_parser(__doc__, usage='%prog [options] COMPANY', argv=argv, prog=Path(__file__).name)
+    parser.add_option('--demo', action='store_true', help='Use fictional offline services without API calls.')
+    parser.add_option('--format', type='choice', choices=('json', 'markdown'), default='json', help='Briefing output format.')
+    parser.add_option('--output', type="path", help='Create a new output file instead of writing to stdout.')
+    parser.add_option('--memory-method', type='choice', choices=('MEM0', 'FILESYSTEM'),
+                        default=os.getenv('MEMORY_METHOD', 'FILESYSTEM'), help='Live memory backend (MEMORY_METHOD).')
+    args = parse_options(parser, argv, (('company', True),))
+    if len(args.company) > 180:
+        parser.error('Company must contain 1 to 180 characters.')
+    if args.memory_method not in ('MEM0', 'FILESYSTEM'):
+        parser.error('MEMORY_METHOD must be MEM0 or FILESYSTEM.')
+    return args
+
+
 def main() -> int:
-    """Run live or fictional research, output a briefing and release service clients."""
-
-    # parser = argparse.ArgumentParser(description=__doc__)
-    # parser.add_argument('company', type=str,
-    #                     help='Company name, optionally including its website',
-    #                     default="Toyota")
-    # parser.add_argument('--demo', action='store_true', help='Use fictional offline services without API calls')
-    # parser.add_argument('--format', choices=('json', 'markdown'), default='json')
-    # parser.add_argument('--output', type=Path, help='Write to a new file instead of stdout (existing files are preserved)',
-    #                     default="/var/tmp/research_output.json")
-
-
-    # args = parser.parse_args()
-    # company = args.company.strip()
-
-    company="Toyota"
-    output_format="json"
-    output_file=Path("/var/tmp/research_output.json")
-    demo=False
-
-    # if not company or len(company) > 180:
-    #     parser.error('Company must contain 1 to 180 characters.')
-
+    """Execute the graph, export its briefing and close live clients on all paths."""
+    args = parse_args()
     clients = []
     try:
-
-        load_environment()
+        configure_cli_logging(args)
         from comparison_app.pipeline import ResearchPipeline
         from comparison_app.demo import DemoAnalyst, DemoMemory, DemoSearch
-        # from comparison_app.memory_mem0 import SharedMemoryMem0
-        from comparison_app.memory_filesystem import SharedMemoryFileSystem
-        from comparison_app.search_service import TavilySearchService
-        from comparison_app.analyst_service import Analyst
-        configure_logging(debug=os.getenv('P3_DEBUG', 'false').lower() == 'true')
-
-        for name in ('httpx', 'httpcore', 'openai', 'mem0', 'posthog', 'urllib3'):
-            logging.getLogger(name).setLevel(logging.CRITICAL)
-
+        configure_cli_logging(args)
         with ExitStack() as files:
-
-            # output = files.enter_context(output_file.expanduser().open('x', encoding='utf-8')) if output_file else sys.stdout
-
-            if demo:
+            output = files.enter_context(args.output.expanduser().open('x', encoding='utf-8')) if args.output else sys.stdout
+            if args.demo:
                 search, analyst, memory = DemoSearch(), DemoAnalyst(), DemoMemory()
                 news_days = 30
-                log.warning('SYNTHETIC DEMO: output describes fictional companies, not the requested company.')
-
+                log.warning('SYNTHETIC DEMO: output describes fictional companies.')
             else:
-
+                from comparison_app.analyst_service import Analyst
+                from comparison_app.search_service import TavilySearchService
+                if args.memory_method == 'MEM0':
+                    from comparison_app.memory_mem0 import SharedMemoryMem0 as Memory
+                else:
+                    from comparison_app.memory_filesystem import SharedMemoryFileSystem as Memory
+                configure_cli_logging(args)
                 settings = Settings.from_env()
-
-                memory = SharedMemoryFileSystem(settings)
+                memory = Memory(settings)
                 clients.append(memory)
-
                 analyst = Analyst(settings)
                 clients.append(analyst)
-
                 search, news_days = TavilySearchService(settings), settings.news_days
-
-            log.info("Starting Pipeline ...")
-
+            log.info('Starting comparison research (demo=%s).', args.demo)
             pipeline = ResearchPipeline(search, analyst, memory, news_days)
-
-            log.info('Starting comparison for company (%s) research (demo=%s). Output to %s', company,demo,output_file)
-            state = pipeline.graph.invoke({'company': company, 'warnings': []}, config={'max_concurrency': 2})
-            log.info(f"Done")
-            briefing = state['briefing'].model_copy(update={'demo': demo})
-
-            # if output_format == 'markdown':
-            #    from comparison_app.export import markdown_briefing
-            #    content = markdown_briefing(briefing)
-            #else:
-            #    content = briefing.model_dump_json(indent=2)
-
-            #output.write(content + '\n')
-            #output.flush()
-
+            state = pipeline.graph.invoke({'company': args.company, 'warnings': []}, config={'max_concurrency': 2})
+            briefing = state['briefing'].model_copy(update={'demo': args.demo})
+            if args.format == 'markdown':
+                from comparison_app.export import markdown_briefing
+                content = markdown_briefing(briefing)
+            else:
+                content = briefing.model_dump_json(indent=2)
+            output.write(content + '\n')
+            output.flush()
             log.info('Comparison research complete. Run ID: %s.', briefing.run_id)
-
         return 0
-
+    except KeyboardInterrupt:
+        log.info('Comparison research interrupted.')
+        return 130
     except ResearchError as research_error:
-        log.error(f"Error: {research_error}.")
         log.error('Comparison research failed: %s', research_error)
         return 1
-
     except Exception as cli_error:
-        log.error('Comparison research failed (%s). Check service access, configuration and output path.',
-                  type(cli_error).__name__)
+        log.error('Comparison research failed (%s). Check configuration, service access and output path.', type(cli_error).__name__)
         return 1
     finally:
         for client in reversed(clients):

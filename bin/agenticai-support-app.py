@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from optparse import Values
 import math
 import os
 import sys
@@ -24,11 +25,25 @@ from utils.common import (
     tokenize,
     stable_vector_id,
 )
+from utils.cli import launch_streamlit, parse_server_args
+
+
+def parse_args(argv: list[str] | None = None) -> Values:
+    """Parse listener and debugging options when launching outside Streamlit."""
+    return parse_server_args(__doc__, 'STREAMLIT_SUPPORT_APP_PORT', 8501,
+                             'STREAMLIT_SUPPORT_APP_ADDRESS', argv, prog=Path(__file__).name)
+
+
+if __name__ == '__main__':
+    from streamlit.runtime.scriptrunner import get_script_run_ctx
+    if get_script_run_ctx(suppress_warning=True) is None:
+        sys.exit(launch_streamlit(Path(__file__).resolve(), parse_args()))
+
 from openai import OpenAI
 from pinecone import Pinecone
 
 
-load_environment()
+load_environment(override=False)
 
 APP_TITLE = "RemindMe Support"
 DEFAULT_CHAT_MODEL = "gpt-4.1-mini"

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import argparse
+from optparse import Values
 import logging
 import os
 import sys
@@ -15,12 +15,11 @@ from typing import Any
 # Make the shared package available when this file is launched directly.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from utils.cli import parse_options, create_parser, configure_cli_logging
 from utils.common import (
-    configure_logging,
     get_field,
     get_int_field,
     get_required_env,
-    load_environment,
     iter_support_files,
     read_source,
     split_text,
@@ -122,103 +121,99 @@ class AnswerResult:
     usage: TokenUsage
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> Values:
     """Parse CLI options and load .env-backed defaults.
 
     Called by main before credentials, retriever settings, and metadata filters
     are validated.
     """
-    load_environment()
-
-    parser = argparse.ArgumentParser(
-        description="Ask a question using ensemble vector plus BM25 RAG."
+    parser = create_parser(
+        description="Ask a question using ensemble vector plus BM25 RAG.",
+        argv=argv, prog=Path(__file__).name,
     )
 
-    parser.add_argument(
+    parser.add_option(
         "--question",
         default=os.getenv("QUESTION") or None,
         help="Question to send to chat.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--index",
         default=os.getenv("PINECONE_INDEX_NAME") or os.getenv("PINECONE_INDEX"),
         help="Pinecone index name. Defaults to PINECONE_INDEX_NAME or PINECONE_INDEX.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--namespace",
         default=os.getenv("PINECONE_NAMESPACE", DEFAULT_NAMESPACE),
         help="Pinecone namespace to query.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--chat-model",
         default=os.getenv("OPENAI_CHAT_MODEL", DEFAULT_CHAT_MODEL),
         help="OpenAI chat model.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--embedding-model",
         default=os.getenv("OPENAI_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL),
         help="OpenAI embedding model.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--embedding-dimensions",
-        type=int,
-        default=int(
-            os.getenv("OPENAI_EMBEDDING_DIMENSIONS", str(DEFAULT_EMBEDDING_DIMENSIONS))
-        ),
+        type="positive_int",
+        default=os.getenv("OPENAI_EMBEDDING_DIMENSIONS", str(DEFAULT_EMBEDDING_DIMENSIONS)),
         help="Embedding dimensions to request from OpenAI.",
     )
-    parser.add_argument("--top-k", type=int, default=DEFAULT_TOP_K)
-    parser.add_argument("--vector-top-k", type=int, default=DEFAULT_RETRIEVER_TOP_K)
-    parser.add_argument("--bm25-top-k", type=int, default=DEFAULT_RETRIEVER_TOP_K)
-    parser.add_argument("--vector-weight", type=float, default=DEFAULT_VECTOR_WEIGHT)
-    parser.add_argument("--bm25-weight", type=float, default=DEFAULT_BM25_WEIGHT)
-    parser.add_argument(
+    parser.add_option("--top-k", type="positive_int", default=DEFAULT_TOP_K)
+    parser.add_option("--vector-top-k", type="positive_int", default=DEFAULT_RETRIEVER_TOP_K)
+    parser.add_option("--bm25-top-k", type="positive_int", default=DEFAULT_RETRIEVER_TOP_K)
+    parser.add_option("--vector-weight", type="float", default=DEFAULT_VECTOR_WEIGHT)
+    parser.add_option("--bm25-weight", type="float", default=DEFAULT_BM25_WEIGHT)
+    parser.add_option(
         "--confidence-threshold",
-        type=float,
+        type="float",
         default=DEFAULT_CONFIDENCE_THRESHOLD,
         help="Minimum ensemble score required before asking OpenAI for an answer.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--source",
         action="append",
         default=[],
         help="Filter by exact source path. Can be repeated.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--source-name",
         action="append",
         default=[],
         help="Filter by exact source filename. Can be repeated.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--source-dir",
         action="append",
         default=[],
         help="Filter by exact source directory name. Can be repeated.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--metadata",
         action="append",
         default=[],
         metavar="KEY=VALUE",
         help="Additional exact metadata filter. Can be repeated.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--show-sources",
         action="store_true",
         help="Log source details after the answer.",
     )
-    parser.add_argument("--debug", action="store_true", help="Enable debug logging.")
-    return parser.parse_args()
+    return parse_options(parser, argv)
 
 
-def get_question(args: argparse.Namespace) -> str:
+def get_question(args: Values) -> str:
     """Return the question from CLI arguments or an interactive prompt.
 
     Called by main after parse_args. Raises HybridRagError when no question is
     provided.
     """
-    question = " ".join(args.question).strip()
+    question = (args.question or "").strip()
     if not question:
         question = input("Question: ").strip()
     if not question:
@@ -227,7 +222,7 @@ def get_question(args: argparse.Namespace) -> str:
     return question
 
 
-def parse_metadata_filters(args: argparse.Namespace) -> dict[str, list[Any]]:
+def parse_metadata_filters(args: Values) -> dict[str, list[Any]]:
     """Build exact-match metadata filters from CLI options.
 
     Called by main before retrieval. The returned filter mapping is used by both
@@ -644,7 +639,7 @@ def print_token_summary(usages: Sequence[TokenUsage]) -> None:
     )
 
 
-def validate_args(args: argparse.Namespace) -> None:
+def validate_args(args: Values) -> None:
     """Validate numeric options and required index configuration.
 
     Called by main after parse_args and before clients are created.
@@ -671,7 +666,7 @@ def main() -> int:
     retrieval, ensemble ranking, answer generation, and token reporting.
     """
     args = parse_args()
-    configure_logging(debug=args.debug, level=logging.WARNING)
+    configure_cli_logging(args)
     validate_args(args)
     question = get_question(args)
     metadata_filters = parse_metadata_filters(args)

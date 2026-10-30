@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import argparse
+from optparse import Values
 import logging
 import os
 from pathlib import Path
@@ -12,9 +12,10 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from openai import APIConnectionError, APIStatusError, OpenAI
-from utils.common import configure_logging, get_required_env
+from utils.cli import parse_options, create_parser, configure_cli_logging
+from utils.common import get_required_env
 
-log = configure_logging()
+log = logging.getLogger(__name__)
 
 INSTRUCTIONS = (
     "Respond in sections labeled 'Answer' and 'Brief explanation'. Give a "
@@ -69,12 +70,18 @@ def converse(client: OpenAI, model: str) -> None:
                       "model access or quota; /clear can reset long history.", turn_api_error.status_code)
 
 
+def parse_args(argv: list[str] | None = None) -> Values:
+    """Parse command options before initializing logging or external clients."""
+    parser = create_parser(description=__doc__, argv=argv, prog=Path(__file__).name)
+    return parse_options(parser, argv)
+
+
 def main() -> int:
     """Load .env configuration, initialize logging and handle session failures."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--debug", action="store_true", help="Enable application debug logs.")
-    args = parser.parse_args()
+    args = parse_args()
+
     try:
+        configure_cli_logging(args)
         for logger_name in ("openai", "httpx", "httpcore"):
             logging.getLogger(logger_name).setLevel(logging.WARNING)
         api_key = get_required_env("OPENAI_API_KEY")

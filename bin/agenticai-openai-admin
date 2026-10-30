@@ -9,7 +9,7 @@ OPENAI_MONTHLY_BILL_LIMIT_USD or OPENAI_MONTHLY_TOKEN_BUDGET.
 
 from __future__ import annotations
 
-import argparse
+from optparse import Values, OptionValueError
 import json
 import logging
 import os
@@ -26,69 +26,69 @@ from urllib.request import Request, urlopen
 # Make the shared package available when this file is launched directly.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from utils.common import configure_logging, get_required_env, load_environment
+from utils.cli import parse_options, create_parser, configure_cli_logging
+from utils.common import get_required_env
 
 
 API_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_BUCKET_WIDTH = "1d"
-log = configure_logging()
+log = logging.getLogger(__name__)
 
 
 class OpenAIUsageError(RuntimeError):
     """Raised when OpenAI usage or cost data cannot be retrieved."""
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> Values:
     """Load .env values and parse command-line arguments.
 
     Called by main to determine the reporting window and optional local limits.
     """
-    load_environment()
-
-    parser = argparse.ArgumentParser(
-        description="List OpenAI models or show organization costs and token usage."
+    parser = create_parser(
+        description="List OpenAI models or show organization costs and token usage.",
+        argv=argv, prog=Path(__file__).name,
     )
-    parser.add_argument(
+    parser.add_option(
         "--list-models",
         action="store_true",
         help="List all models available to OPENAI_ADMIN_API_KEY instead of reporting usage.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--api-key-env",
         default=None,
         help="API key variable (default: OPENAI_API_KEY for models, OPENAI_ADMIN_KEY for usage).",
     )
-    parser.add_argument(
+    parser.add_option(
         "--start-time",
-        type=int,
+        type="int",
         default=None,
         help="Unix start time for the report. Defaults to the start of this UTC month.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--end-time",
-        type=int,
+        type="int",
         default=None,
         help="Unix end time for the report. Defaults to now.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--monthly-bill-limit-usd",
-        type=Decimal,
-        default=parse_optional_decimal(os.getenv("OPENAI_MONTHLY_BILL_LIMIT_USD")),
+        type="decimal",
+        default=os.getenv("OPENAI_MONTHLY_BILL_LIMIT_USD") or None,
         help=(
             "Optional local monthly USD bill limit. Defaults to "
             "OPENAI_MONTHLY_BILL_LIMIT_USD."
         ),
     )
-    parser.add_argument(
+    parser.add_option(
         "--monthly-token-budget",
-        type=int,
-        default=parse_optional_int(os.getenv("OPENAI_MONTHLY_TOKEN_BUDGET")),
+        type="int",
+        default=os.getenv("OPENAI_MONTHLY_TOKEN_BUDGET") or None,
         help=(
             "Optional local monthly token budget. Defaults to "
             "OPENAI_MONTHLY_TOKEN_BUDGET."
         ),
     )
-    return parser.parse_args()
+    return parse_options(parser, argv)
 
 
 def parse_optional_decimal(value: str | None) -> Decimal | None:
@@ -101,7 +101,7 @@ def parse_optional_decimal(value: str | None) -> Decimal | None:
     try:
         return Decimal(value)
     except InvalidOperation as decimal_parse_error:
-        raise OpenAIUsageError(f"Invalid decimal value: {value}") from decimal_parse_error
+        raise OptionValueError("Must be a decimal number.") from decimal_parse_error
 
 
 def parse_optional_int(value: str | None) -> int | None:
@@ -344,8 +344,8 @@ def main() -> int:
 
     Called by the module entrypoint when this script is executed directly.
     """
-    configure_logging()
     args = parse_args()
+    configure_cli_logging(args)
     key_env = args.api_key_env or (
         "OPENAI_API_KEY" if args.list_models else "OPENAI_ADMIN_KEY"
     )

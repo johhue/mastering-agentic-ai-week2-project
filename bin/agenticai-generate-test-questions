@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import argparse
+from optparse import Values
 import json
 import logging
 import os
@@ -16,19 +16,18 @@ from pathlib import Path
 # Make the shared package available when this file is launched directly.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from utils.cli import parse_options, create_parser, configure_cli_logging
 from utils.common import (
-    configure_logging,
     get_required_env,
-    load_environment,
     iter_support_files,
     compact_text,
-    read_source as read_source_text,
+    read_source,
 )
 from openai import OpenAI
 
 
 DEFAULT_MODEL = "gpt-4.1-mini"
-DEFAULT_OUTPUT_FILE = Path("../20Questions.md")
+DEFAULT_OUTPUT_FILE = Path("20Questions.md")
 DEFAULT_QUESTION_COUNT = 20
 DEFAULT_CONTEXT_BUDGET = 18000
 DEFAULT_RANDOM_SEED = None
@@ -46,46 +45,45 @@ class SourceDocument:
     text: str
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> Values:
     """Parse CLI options and load environment defaults.
 
     Called by main before any files are read or OpenAI requests are made.
     """
-    load_environment()
-
-    parser = argparse.ArgumentParser(
-        description="Generate random RAG test questions from RemindMe* files."
+    parser = create_parser(
+        description="Generate random RAG test questions from RemindMe* files.",
+        argv=argv, prog=Path(__file__).name,
     )
-    parser.add_argument(
+    parser.add_option(
         "--output",
-        type=Path,
+        type="path",
         default=DEFAULT_OUTPUT_FILE,
         help="Markdown file to write. Defaults to 20Questions.md.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--count",
-        type=int,
+        type="positive_int",
         default=DEFAULT_QUESTION_COUNT,
         help="Number of questions to generate.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--model",
         default=os.getenv("OPENAI_CHAT_MODEL", DEFAULT_MODEL),
         help="OpenAI chat model to use.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--context-budget",
-        type=int,
+        type="positive_int",
         default=DEFAULT_CONTEXT_BUDGET,
         help="Approximate character budget for sampled source context.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--seed",
-        type=int,
+        type="int",
         default=DEFAULT_RANDOM_SEED,
         help="Optional random seed for repeatable source sampling.",
     )
-    return parser.parse_args()
+    return parse_options(parser, argv)
 
 
 def read_source(path: Path) -> SourceDocument:
@@ -257,8 +255,8 @@ def main() -> int:
     Orchestrates argument parsing, source loading, context sampling, OpenAI
     generation, and Markdown output.
     """
-    configure_logging()
     args = parse_args()
+    configure_cli_logging(args)
     sources = load_sources()
     if not sources:
         raise QuestionGenerationError("No readable files found in RemindMe* directories.")

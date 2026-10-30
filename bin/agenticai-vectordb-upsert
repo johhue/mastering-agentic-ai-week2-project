@@ -14,7 +14,7 @@ Optional .env values:
 
 from __future__ import annotations
 
-import argparse
+from optparse import Values
 import hashlib
 import logging
 import os
@@ -27,10 +27,9 @@ from typing import Any
 # Make the shared package available when this file is launched directly.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from utils.cli import parse_options, create_parser, configure_cli_logging
 from utils.common import (
     batched,
-    configure_logging,
-    load_environment,
     find_input_dirs,
     iter_text_files,
     read_text,
@@ -83,54 +82,54 @@ class DocumentChunk:
         return stable_vector_id(self.source_path, self.chunk_index, self.text)
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> Values:
     """Parse CLI options and load .env-backed defaults.
 
     Called by main before directories are scanned or credentials are validated.
     """
-    load_environment()
-
-    parser = argparse.ArgumentParser(
-        description="Embed files in RemindMe* directories and upsert them to Pinecone."
+    parser = create_parser(
+        description="Embed files in RemindMe* directories and upsert them to Pinecone.",
+        argv=argv, prog=Path(__file__).name,
     )
-    parser.add_argument(
+    parser.add_option(
         "--input-glob",
         default=DEFAULT_INPUT_GLOB,
         help="Directory glob to scan. Defaults to RemindMe*.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--index",
         default=os.getenv("PINECONE_INDEX_NAME") or os.getenv("PINECONE_INDEX"),
         help="Pinecone index name. Defaults to PINECONE_INDEX_NAME or PINECONE_INDEX.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--namespace",
         default=os.getenv("PINECONE_NAMESPACE", DEFAULT_NAMESPACE),
         help="Pinecone namespace to upsert into.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--embedding-model",
         default=os.getenv("OPENAI_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL),
         help="OpenAI embedding model.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--embedding-dimensions",
-        type=int,
-        default=int(
-            os.getenv("OPENAI_EMBEDDING_DIMENSIONS", str(DEFAULT_EMBEDDING_DIMENSIONS))
-        ),
+        type="positive_int",
+        default=os.getenv("OPENAI_EMBEDDING_DIMENSIONS", str(DEFAULT_EMBEDDING_DIMENSIONS)),
         help="Embedding dimensions requested from OpenAI.",
     )
-    parser.add_argument("--chunk-size", type=int, default=1200)
-    parser.add_argument("--chunk-overlap", type=int, default=200)
-    parser.add_argument("--embedding-batch-size", type=int, default=64)
-    parser.add_argument("--upsert-batch-size", type=int, default=100)
-    parser.add_argument(
+    parser.add_option("--chunk-size", type="positive_int", default=1200)
+    parser.add_option("--chunk-overlap", type="int", default=200)
+    parser.add_option("--embedding-batch-size", type="positive_int", default=64)
+    parser.add_option("--upsert-batch-size", type="positive_int", default=100)
+    parser.add_option(
         "--dry-run",
         action="store_true",
         help="Read and chunk files without embedding or upserting.",
     )
-    return parser.parse_args()
+    args = parse_options(parser, argv)
+    if not 0 <= args.chunk_overlap < args.chunk_size:
+        parser.error('--chunk-overlap must be nonnegative and smaller than --chunk-size.')
+    return args
 
 
 def load_chunks(
@@ -205,7 +204,7 @@ def build_vectors(
     return vectors
 
 
-def validate_environment(args: argparse.Namespace) -> tuple[str, str, str]:
+def validate_environment(args: Values) -> tuple[str, str, str]:
     """Validate required API credentials and target Pinecone index settings.
 
     Called by main after dry-run handling and before creating OpenAI or Pinecone
@@ -271,8 +270,8 @@ def main() -> int:
     Coordinates logging, argument parsing, corpus loading, dry-run handling,
     credential validation, embedding, and Pinecone upsert.
     """
-    configure_logging()
     args = parse_args()
+    configure_cli_logging(args)
 
     input_dirs = find_input_dirs(args.input_glob)
     if not input_dirs:

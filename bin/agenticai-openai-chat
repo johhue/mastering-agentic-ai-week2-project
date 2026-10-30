@@ -3,7 +3,8 @@
 
 from __future__ import annotations
 
-import argparse
+from optparse import Values
+import json
 import logging
 import os
 from pathlib import Path
@@ -12,20 +13,25 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from openai import APIConnectionError, APIStatusError, OpenAI
-from utils.common import configure_logging, get_required_env
+from utils.cli import parse_options, create_parser, configure_cli_logging
+from utils.common import get_required_env
 
-log = configure_logging()
+log = logging.getLogger(__name__)
+
+
+def parse_args(argv: list[str] | None = None) -> Values:
+    """Parse command options before initializing logging or external clients."""
+    parser = create_parser(description=__doc__, usage='%prog [options] [QUESTION]', argv=argv, prog=Path(__file__).name)
+    return parse_options(parser, argv, (('question', False),))
 
 
 def main() -> int:
     """Read a question, request an answer, and report failures without secrets."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("question", nargs="?", help="Question (prompts if omitted).", default="Who Are You?")
-    parser.add_argument("--debug", action="store_true", help="Enable debug logging.")
-    args = parser.parse_args()
+    args = parse_args()
+
     try:
-        configure_logging(debug=args.debug)
-        # SDK debug logs can contain request bodies; keep those out of logs.
+        configure_cli_logging(args)
+        # Print explicit diagnostics below without exposing SDK authorization headers.
         for logger_name in ("openai", "httpx", "httpcore"):
             logging.getLogger(logger_name).setLevel(logging.WARNING)
         log.info("OpenAI chat started.")
@@ -38,8 +44,11 @@ def main() -> int:
             raise ValueError("OPENAI_MODEL must not be empty.")
         log.debug("Question accepted (%d characters).", len(question))
         log.info("Sending question to model %s.", model)
-        with OpenAI(api_key=api_key, base_url=os.getenv("OPENAI_BASE_URL") or None) as client:
-            response = client.responses.create(
+        with OpenAI(
+            api_key=api_key,
+            base_url=os.getenv("OPENAI_BASE_URL") or None,
+        ) as client:
+            request = dict(
                 model=model,
                 input=question,
                 instructions=(
@@ -51,6 +60,10 @@ def main() -> int:
                 ),
                 store=False,
             )
+            print(f"Base URL: {client.base_url}", flush=True)
+            print("Request JSON:\n" + json.dumps(request, indent=2, ensure_ascii=False), flush=True)
+            response = client.responses.create(**request)
+            print("Response JSON:\n" + response.model_dump_json(indent=2), flush=True)
         answer = response.output_text.strip()
         if not answer:
             raise RuntimeError("The model returned no text answer.")
@@ -63,7 +76,7 @@ def main() -> int:
     except APIConnectionError:
         log.error("Could not connect to OpenAI. Check connectivity and OPENAI_BASE_URL.")
     except APIStatusError as api_status_error:
-        log.error("OpenAI request failed (HTTP %s). Check credentials, model access and quota.", api_status_error.status_code)
+        log.error("OpenAI request failed (HTTP %s) error=%s. Check credentials, model access and quota.", api_status_error.status_code, api_status_error)
     except (ValueError, RuntimeError, OSError) as chat_error:
         log.error("Chat failed: %s", chat_error)
     except Exception as unexpected_chat_error:
