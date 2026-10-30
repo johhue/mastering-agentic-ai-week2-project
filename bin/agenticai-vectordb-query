@@ -7,7 +7,7 @@ namespace, fetches their metadata, and summarizes distinct source files.
 
 from __future__ import annotations
 
-import argparse
+from optparse import Values
 import logging
 import os
 import sys
@@ -20,12 +20,13 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from utils.common import batched, configure_logging, get_field, get_required_env, load_environment
+from utils.cli import parse_options, create_parser, configure_cli_logging
+from utils.common import batched, get_field, get_required_env
 from pinecone import Pinecone, PineconeException
 
 DEFAULT_NAMESPACE = "__default__"
 DEFAULT_BATCH_SIZE = 100
-log = configure_logging()
+log = logging.getLogger(__name__)
 
 
 class QueryPineconeError(RuntimeError):
@@ -61,43 +62,42 @@ def create_pinecone_index(api_key: str, index_name: str) -> Any:
         ) from index_creation_error
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> Values:
     """Load .env values and parse command-line arguments.
 
     Called by main to determine the target index, namespace, and output options.
     """
-    load_environment()
-
-    parser = argparse.ArgumentParser(
-        description="List source files represented by vectors in a Pinecone index."
+    parser = create_parser(
+        description="List source files represented by vectors in a Pinecone index.",
+        argv=argv, prog=Path(__file__).name,
     )
-    parser.add_argument(
+    parser.add_option(
         "--index",
         default=os.getenv("PINECONE_INDEX_NAME") or os.getenv("PINECONE_INDEX"),
         help="Pinecone index name. Defaults to PINECONE_INDEX_NAME or PINECONE_INDEX.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--namespace",
         default=os.getenv("PINECONE_NAMESPACE", DEFAULT_NAMESPACE),
         help="Pinecone namespace to inspect.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--all-namespaces",
         action="store_true",
         help="Inspect every namespace reported by Pinecone index stats.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--batch-size",
-        type=int,
+        type="positive_int",
         default=DEFAULT_BATCH_SIZE,
         help="Number of vector IDs to fetch at a time.",
     )
-    parser.add_argument(
+    parser.add_option(
         "--show-chunks",
         action="store_true",
         help="Print vector IDs and chunk indexes under each source file.",
     )
-    args = parser.parse_args()
+    args = parse_options(parser, argv)
     if not 1 <= args.batch_size <= 1000:
         parser.error("--batch-size must be between 1 and 1000")
     return args
@@ -278,7 +278,7 @@ def main() -> int:
     """
     args = parse_args()
     try:
-        configure_logging()
+        configure_cli_logging(args)
     except OSError as logging_setup_error:
         logging.basicConfig(level=logging.INFO, format="%(message)s", force=True)
         raise QueryPineconeError(f"Could not configure logging: {logging_setup_error}") from logging_setup_error
