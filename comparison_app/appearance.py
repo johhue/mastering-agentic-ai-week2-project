@@ -3,15 +3,11 @@ from __future__ import annotations
 
 import base64
 from functools import lru_cache
-import logging
 import os
 from pathlib import Path
-from utils.common import configure_logging, get_required_env
 
 import streamlit as st
 from utils.config import ROOT
-
-log = configure_logging()
 
 
 @lru_cache(maxsize=4)

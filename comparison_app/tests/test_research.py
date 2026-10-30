@@ -117,7 +117,7 @@ class SearchTests(unittest.TestCase):
         client.client.search = MagicMock(return_value={'results': []})
         self.assertEqual(client.search('Company'), [])
         client.client.search.side_effect = RuntimeError('private-secret-not-for-logs')
-        with patch('comparison_app.search_service.py.time.sleep'), self.assertRaises(ResearchError) as caught:
+        with patch('comparison_app.search_service.time.sleep'), self.assertRaises(ResearchError) as caught:
             client.search('Company')
         self.assertNotIn('private-secret', str(caught.exception))
         self.assertEqual(client.client.search.call_count, 4)

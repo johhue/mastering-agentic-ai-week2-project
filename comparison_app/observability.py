@@ -2,12 +2,8 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 from urllib.parse import urlsplit, urlunsplit
-from utils.common import configure_logging, get_required_env
-
-log = configure_logging()
 
 
 def safe_text(value: object) -> str:
@@ -37,11 +33,15 @@ def safe_url(value: object) -> str:
 
 def log_request(request) -> None:
     """Observe actual SDK HTTP requests, including retries, without headers or bodies."""
+    from utils import common
+    log = common.initialize_logging(__file__)
     log.info('External HTTP request method=%s url=%s', request.method, safe_url(request.url))
 
 
 def log_response(response) -> None:
     """Record the status of an external response without exposing its contents."""
+    from utils import common
+    log = common.initialize_logging(__file__)
     log.info('External HTTP response status=%s url=%s', response.status_code, safe_url(response.request.url))
 
 
@@ -58,6 +58,8 @@ def observe_client(client) -> None:
 
 def message(sender: str, recipient: str, summary: str, payload: object = None) -> None:
     """Log public agent communication; detailed payloads are opt-in DEBUG data."""
+    from utils import common
+    log = common.initialize_logging(__file__)
     log.info('Agent message %s -> %s: %s', sender, recipient, safe_text(summary))
     if payload is not None:
         log.debug('Agent conversation %s -> %s: %s', sender, recipient, safe_text(payload))

@@ -1,16 +1,15 @@
 """Four-role LangGraph orchestration with mandatory mem0 agent handoffs."""
 from __future__ import annotations
 
-import logging
 import operator
 from typing import Annotated, TypedDict
 from uuid import uuid4
-log = logging.getLogger(__name__)
 from langgraph.graph import END, START, StateGraph
 from utils.config import ResearchError
 from comparison_app.observability import message
 from comparison_app.models import Briefing, Claim, Discovery, Profile, Source, Synthesis, utc_now, validate_citations
-
+from utils import common
+log = common.initialize_logging(__file__)
 
 class ResearchState(TypedDict, total=False):
     """The graph carries control data; research artifacts are exchanged through mem0."""

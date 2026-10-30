@@ -3,19 +3,19 @@
 
 from __future__ import annotations
 
-from optparse import Values
-import logging
-import os
 from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from openai import APIConnectionError, APIStatusError, OpenAI
-from utils.cli import parse_options, create_parser, configure_cli_logging
-from utils.common import get_required_env
+from utils.cli import parse_options, create_parser
+from utils import common
+from optparse import OptionParser, OptionGroup, Values, OptionValueError
+from dotenv import load_dotenv
 
-log = logging.getLogger(__name__)
+# Load variables from the .env file into the environment
+load_dotenv()
 
 INSTRUCTIONS = (
     "Respond in sections labeled 'Answer' and 'Brief explanation'. Give a "
@@ -28,8 +28,8 @@ INSTRUCTIONS = (
 def converse(client: OpenAI, model: str) -> None:
     """Run the input loop, retaining only successful turns in memory."""
     history: list[dict[str, str]] = []
-    print("Commands: /exit to quit, /clear to start a new conversation.")
-    print("Each answer includes a brief explanation, not private internal reasoning.")
+    log.info("Commands: /exit to quit, /clear to start a new conversation.")
+    log.info("Each answer includes a brief explanation, not private internal reasoning.")
     while True:
         try:
             question = input("\nYou: ").strip()
@@ -42,13 +42,13 @@ def converse(client: OpenAI, model: str) -> None:
         if question.lower() == "/clear":
             history.clear()
             log.info("Conversation history cleared.")
-            print("Conversation cleared.")
+            log.info("Conversation cleared.")
             continue
         if not question:
             log.debug("Ignored empty input.")
             continue
         pending = [*history, {"role": "user", "content": question}]
-        print(pending)
+        log.info(pending)
         try:
             log.info("Sending conversation turn %d.", len(history) // 2 + 1)
             response = client.responses.create(
@@ -57,10 +57,10 @@ def converse(client: OpenAI, model: str) -> None:
             answer = response.output_text.strip()
             if not answer:
                 log.warning("Model returned no text; history retained without this turn.")
-                print("No text answer received. Please try again.")
+                log.info("No text answer received. Please try again.")
                 continue
             history = [*pending, {"role": "assistant", "content": answer}]
-            print(f"\nOpenAI:\n{answer}")
+            log.info(f"\nOpenAI:\n{answer}")
             log.info("Conversation answer received.")
             log.debug("History contains %d messages.", len(history))
         except APIConnectionError:
@@ -72,24 +72,49 @@ def converse(client: OpenAI, model: str) -> None:
 
 def parse_args(argv: list[str] | None = None) -> Values:
     """Parse command options before initializing logging or external clients."""
+    try:
+
+        parser = OptionParser()
+
+        # Options
+        main_group = OptionGroup(parser, os.path.basename(__file__) + " options", "Also run the tool-calling loop after MCP discovery")
+        main_group.add_option('-w', '--with_agent', dest="with_agent", action="store_true", help="Sample Question", default="Who is the contact in the CAISO Cafe.")
+        main_group.add_option('-s', '--sample_question', dest="sample_question", type="string", action="store", help="Puppet Module")
+        main_group.add_option('-c', '--conversation', dest="conversation", action="store_true", help="Conduct a conversation or not.")
+        parser.add_option_group(main_group)
+
+        # Add the Common environment/app/component/node options
+        app_arg_group = common.get_app_arg_group(parser)
+        parser.add_option_group(app_arg_group)
+
+        # Add the standard args
+        common_arg_group = common.get_common_arg_group(parser)
+        parser.add_option_group(common_arg_group)
+
+        options, remainder = parser.parse_args()
+
+        return options
+
+    except Exception as parse_args_err:
+        raise RuntimeError(common.generic_error_message(error_code="PUPPET-100", err=parse_args_err))
+
     parser = create_parser(description=__doc__, argv=argv, prog=Path(__file__).name)
     return parse_options(parser, argv)
 
 
 def main() -> int:
     """Load .env configuration, initialize logging and handle session failures."""
-    args = parse_args()
 
     try:
-        configure_cli_logging(args)
+        import logging
         for logger_name in ("openai", "httpx", "httpcore"):
             logging.getLogger(logger_name).setLevel(logging.WARNING)
-        api_key = get_required_env("OPENAI_API_KEY")
-        model = get_required_env("OPENAI_MODEL").strip()
+        api_key = common.get_required_env("OPENAI_API_KEY", "X")
+        model = common.get_required_env("OPENAI_MODEL", "X").strip()
         if not model:
             raise ValueError("OPENAI_MODEL must not be empty.")
         log.info("Starting OpenAI conversation with model %s.", model)
-        with OpenAI(api_key=api_key, base_url=os.getenv("OPENAI_BASE_URL") or None) as client:
+        with OpenAI(api_key=api_key, base_url= common.get_required_env("OPENAI_BASE_URL", "X")) as client:
             converse(client, model)
         return 0
     except KeyboardInterrupt:
@@ -102,5 +127,49 @@ def main() -> int:
     return 1
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+if __name__ == '__main__':
+
+    try:
+
+        import os
+        import platform
+
+        opts = parse_args()
+
+        hostname = platform.node()
+        script_label = os.path.basename(__file__).replace('.py', '')
+
+        app_list = []
+
+        log = common.initialize_logging(label=script_label)
+
+        # Load config dict
+        default_config_files = common.get_default_config_files(os.path.abspath(__file__), __file__)
+        config_dict = common.load_config_file(opts.config_file, default_config_files)
+        if config_dict is None:
+            log.error(
+                "No config file could be loaded. Give -F <config file> or use one of default config files:\n\t" + '\n\t'.join(
+                    default_config_files))
+            sys.exit(1)
+
+        log.info(f"Loaded config file: {config_dict['loaded_config_file']}")
+        if opts.verbose:
+            import logging
+
+            log.setLevel(logging.DEBUG)
+
+        if opts.verbose:
+            import logging
+
+            log.setLevel(logging.DEBUG)
+
+        # Print the config if in debug:
+        if opts.verbose:
+            common.print_config_dict(config_dict)
+
+        # main
+        main()
+
+    except Exception as outer_main_err:
+        raise RuntimeError(common.generic_error_message(error_code='AIML-100', err=outer_main_err))
+

@@ -1,7 +1,6 @@
 """Streamlit multi-agent market research with a downloadable competitor briefing."""
 from __future__ import annotations
 
-import logging
 import os
 from pathlib import Path
 import sys
@@ -10,7 +9,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import streamlit as st
 from utils.config import ResearchError, Settings, load_environment
-from utils.common import configure_logging, get_required_env
 from comparison_app.demo import DemoAnalyst, DemoMemory, DemoSearch
 from comparison_app.export import citation_numbers, claim_text, filename, markdown_briefing, pdf_briefing
 from comparison_app.memory_mem0 import SharedMemoryMem0
@@ -20,10 +18,6 @@ from comparison_app.search_service import TavilySearchService
 from comparison_app.analyst_service import Analyst
 from comparison_app.appearance import render_appearance
 from comparison_app.analyst_rules import AnalysisRules
-
-log = configure_logging()
-
-
 
 def clear_chat_history() -> None:
     """Clear this session's research history and downloads while retaining preferences."""

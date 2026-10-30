@@ -2,9 +2,7 @@
 """Store a JSON artifact in hosted mem0.ai using the comparison app's memory API."""
 from __future__ import annotations
 
-from optparse import Values
 import json
-import logging
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -13,58 +11,124 @@ from uuid import uuid4
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from utils.config import integer, required
-from utils.cli import parse_options, create_parser, configure_cli_logging
+from utils.cli import parse_options, create_parser
+from utils import common
+from optparse import OptionParser, OptionGroup, Values, OptionValueError
+from dotenv import load_dotenv
 
-
-log = logging.getLogger(__name__)
-
+# Load variables from the .env file into the environment
+load_dotenv()
 
 def parse_args(argv: list[str] | None = None) -> Values:
     """Parse command options before initializing logging or external clients."""
-    parser = create_parser(description=__doc__, usage='%prog [options] FILE', argv=argv, prog=Path(__file__).name)
-    parser.add_option('--company', type="nonempty", help='Company namespace (required).')
-    parser.add_option('--kind', type="nonempty", default='manual')
-    parser.add_option('--run-id', type="nonempty", default=None)
-    args = parse_options(parser, argv, (('file', True),))
-    if args.company is None:
-        parser.error('--company is required.')
-    return args
+
+    try:
+
+        parser = OptionParser()
+
+        # Options
+        main_group = OptionGroup(parser, os.path.basename(__file__) + " options", "Also run the tool-calling loop after MCP discovery")
+        main_group.add_option('-f', '--file', dest="file", action="store", help="File to upload")
+        main_group.add_option('--company', type="str", help='Company namespace (required).', default="Hoka")
+        main_group.add_option('--kind', type="str", default='manual')
+        main_group.add_option('--run-id', type="str", default=None)
+        parser.add_option_group(main_group)
+
+        # Add the Common environment/app/component/node options
+        app_arg_group = common.get_app_arg_group(parser)
+        parser.add_option_group(app_arg_group)
+
+        # Add the standard args
+        common_arg_group = common.get_common_arg_group(parser)
+        parser.add_option_group(common_arg_group)
+
+        options, remainder = parser.parse_args()
+
+        return options
+
+    except Exception as parse_args_err:
+        raise RuntimeError(common.generic_error_message(error_code="PUPPET-100", err=parse_args_err))
 
 
 def main() -> int:
     """Validate JSON input, store an exact artifact and print its run and memory IDs."""
-    args = parse_args()
 
     memory = None
     try:
-        configure_cli_logging(args)
-        text = sys.stdin.read() if args.file == '-' else Path(args.file).read_text(encoding='utf-8')
-        payload = json.loads(text)
-        if not isinstance(payload, dict):
+        # text = sys.stdin.read() if opts.file == '-' else Path(opts.file).read_text(encoding='utf-8')
+        payload_dict = {
+            "this": "that"
+        }
+        payload_json = json.dumps(payload_dict)
+        if not isinstance(payload_dict, dict):
             raise ValueError('Input must be a JSON object.')
         import os
         from comparison_app.memory_mem0 import SharedMemoryMem0
-        configure_cli_logging(args)
-        settings = SimpleNamespace(mem0_key=required('MEM0_API_KEY'),
-            workspace=os.getenv('P3_WORKSPACE', 'market-research'),
-            timeout=integer('P3_TIMEOUT_SECONDS', 60, maximum=300))
-        run_id = args.run_id or uuid4().hex
-        memory = SharedMemoryMem0(settings)
-        ids = memory.write(args.company.strip(), run_id, args.kind.strip(), payload)
-        print(json.dumps({'run_id': run_id, 'memory_ids': ids}))
+        settings = SimpleNamespace(
+            mem0_key=required('MEM0_API_KEY'),
+            workspace= common.get_required_env('P3_WORKSPACE', 'market-research'),
+            timeout=integer('P3_TIMEOUT_SECONDS', 60, maximum=300)
+        )
+        run_id = uuid4().hex
+        memory = SharedMemoryMem0(settings=settings, log=log)
+        ids = memory.write(opts.company.strip(), run_id, opts.kind.strip(), payload_dict)
+        log.info(json.dumps({'run_id': run_id, 'memory_ids': ids}))
         log.info('Stored JSON artifact in hosted mem0.ai.')
         return 0
     except Exception as store_error:
-        log.error('Memory storage failed (%s). Check JSON input, .env and service access.',
-                  type(store_error).__name__)
+        log.error('Memory storage failed (%s) %s. Check JSON input, .env and service access.',
+                  type(store_error).__name__, store_error)
         return 1
     finally:
         if memory is not None:
             try:
                 memory.close()
             except Exception as cleanup_error:
-                log.warning('Memory client cleanup failed (%s).', type(cleanup_error).__name__)
+                log.warning('Memory client cleanup failed (%s) %s.', type(cleanup_error).__name__, cleanup_error)
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+
+    try:
+
+        import os
+        import platform
+
+        opts = parse_args()
+
+        hostname = platform.node()
+        script_label = os.path.basename(__file__).replace('.py', '')
+
+        app_list = []
+
+        log = common.initialize_logging(label=script_label)
+
+        # Load config dict
+        default_config_files = common.get_default_config_files(os.path.abspath(__file__), __file__)
+        config_dict = common.load_config_file(opts.config_file, default_config_files)
+        if config_dict is None:
+            log.error(
+                "No config file could be loaded. Give -F <config file> or use one of default config files:\n\t" + '\n\t'.join(
+                    default_config_files))
+            sys.exit(1)
+
+        log.info(f"Loaded config file: {config_dict['loaded_config_file']}")
+        if opts.verbose:
+            import logging
+
+            log.setLevel(logging.DEBUG)
+
+        if opts.verbose:
+            import logging
+
+            log.setLevel(logging.DEBUG)
+
+        # Print the config if in debug:
+        if opts.verbose:
+            common.print_config_dict(config_dict)
+
+        # main
+        main()
+
+    except Exception as outer_main_err:
+        raise RuntimeError(common.generic_error_message(error_code='AIML-100', err=outer_main_err))

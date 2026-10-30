@@ -3,10 +3,7 @@
 
 from __future__ import annotations
 
-from optparse import Values
 import json
-import logging
-import os
 import sys
 import random
 from collections.abc import Sequence
@@ -16,15 +13,15 @@ from pathlib import Path
 # Make the shared package available when this file is launched directly.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from utils.cli import parse_options, create_parser, configure_cli_logging
-from utils.common import (
-    get_required_env,
-    iter_support_files,
-    compact_text,
-    read_source,
-)
-from openai import OpenAI
+from utils.cli import parse_options, create_parser
+from utils import common
+from optparse import OptionParser, OptionGroup, Values, OptionValueError
+from dotenv import load_dotenv
 
+# Load variables from the .env file into the environment
+load_dotenv()
+
+from openai import OpenAI
 
 DEFAULT_MODEL = "gpt-4.1-mini"
 DEFAULT_OUTPUT_FILE = Path("20Questions.md")
@@ -32,7 +29,6 @@ DEFAULT_QUESTION_COUNT = 20
 DEFAULT_CONTEXT_BUDGET = 18000
 DEFAULT_RANDOM_SEED = None
 TEXT_SUFFIXES = {".csv", ".html", ".json", ".md", ".rst", ".txt", ".yaml", ".yml"}
-LOGGER = logging.getLogger(__name__)
 
 
 class QuestionGenerationError(RuntimeError):
@@ -50,6 +46,32 @@ def parse_args(argv: list[str] | None = None) -> Values:
 
     Called by main before any files are read or OpenAI requests are made.
     """
+    try:
+
+        parser = OptionParser()
+
+        # Options
+        main_group = OptionGroup(parser, os.path.basename(__file__) + " options", "Also run the tool-calling loop after MCP discovery")
+        main_group.add_option('-w', '--with_agent', dest="with_agent", action="store_true", help="Sample Question", default="Who is the contact in the CAISO Cafe.")
+        main_group.add_option('-s', '--sample_question', dest="sample_question", type="string", action="store", help="Puppet Module")
+        main_group.add_option('-c', '--conversation', dest="conversation", action="store_true", help="Conduct a conversation or not.")
+        parser.add_option_group(main_group)
+
+        # Add the Common environment/app/component/node options
+        app_arg_group = common.get_app_arg_group(parser)
+        parser.add_option_group(app_arg_group)
+
+        # Add the standard args
+        common_arg_group = common.get_common_arg_group(parser)
+        parser.add_option_group(common_arg_group)
+
+        options, remainder = parser.parse_args()
+
+        return options
+
+    except Exception as parse_args_err:
+        raise RuntimeError(common.generic_error_message(error_code="PUPPET-100", err=parse_args_err))
+
     parser = create_parser(
         description="Generate random RAG test questions from RemindMe* files.",
         argv=argv, prog=Path(__file__).name,
@@ -62,18 +84,18 @@ def parse_args(argv: list[str] | None = None) -> Values:
     )
     parser.add_option(
         "--count",
-        type="positive_int",
+        type="int",
         default=DEFAULT_QUESTION_COUNT,
         help="Number of questions to generate.",
     )
     parser.add_option(
         "--model",
-        default=os.getenv("OPENAI_CHAT_MODEL", DEFAULT_MODEL),
+        default = common.get_required_env("OPENAI_CHAT_MODEL", DEFAULT_MODEL),
         help="OpenAI chat model to use.",
     )
     parser.add_option(
         "--context-budget",
-        type="positive_int",
+        type="int",
         default=DEFAULT_CONTEXT_BUDGET,
         help="Approximate character budget for sampled source context.",
     )
@@ -103,7 +125,7 @@ def load_sources() -> list[SourceDocument]:
     and read_source, then filters out empty documents.
     """
     sources = []
-    for path in iter_support_files(TEXT_SUFFIXES):
+    for path in common.iter_support_files(TEXT_SUFFIXES):
         source = read_source(path)
         if source.text:
             sources.append(source)
@@ -255,29 +277,67 @@ def main() -> int:
     Orchestrates argument parsing, source loading, context sampling, OpenAI
     generation, and Markdown output.
     """
-    args = parse_args()
-    configure_cli_logging(args)
+
     sources = load_sources()
     if not sources:
         raise QuestionGenerationError("No readable files found in RemindMe* directories.")
 
-    rng = random.Random(args.seed)
-    context = sample_context(sources, args.context_budget, rng)
-    openai_api_key = get_required_env("OPENAI_API_KEY", QuestionGenerationError)
+    rng = random.Random(opts.seed)
+    context = sample_context(sources, opts.context_budget, rng)
+    api_key = common.get_required_env("OPENAI_API_KEY", "X")
     questions = generate_questions(
-        client=OpenAI(api_key=openai_api_key),
-        model=args.model,
+        client=OpenAI(api_key=api_key),
+        model=opts.model,
         context=context,
-        count=args.count,
+        count=opts.count,
     )
-    write_markdown(args.output, questions, args.model)
-    LOGGER.info("Wrote %s questions to %s", len(questions), args.output)
+    write_markdown(opts.output, questions, opts.model)
+    log.info("Wrote %s questions to %s", len(questions), opts.output)
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
+
     try:
-        raise SystemExit(main())
-    except QuestionGenerationError as question_generation_cli_error:
-        LOGGER.error("Error: %s", question_generation_cli_error)
-        raise SystemExit(1) from question_generation_cli_error
+
+        import os
+        import platform
+
+        opts = parse_args()
+
+        hostname = platform.node()
+        script_label = os.path.basename(__file__).replace('.py', '')
+
+        app_list = []
+
+        log = common.initialize_logging(label=script_label)
+
+        # Load config dict
+        default_config_files = common.get_default_config_files(os.path.abspath(__file__), __file__)
+        config_dict = common.load_config_file(opts.config_file, default_config_files)
+        if config_dict is None:
+            log.error(
+                "No config file could be loaded. Give -F <config file> or use one of default config files:\n\t" + '\n\t'.join(
+                    default_config_files))
+            sys.exit(1)
+
+        log.info(f"Loaded config file: {config_dict['loaded_config_file']}")
+        if opts.verbose:
+            import logging
+
+            log.setLevel(logging.DEBUG)
+
+        if opts.verbose:
+            import logging
+
+            log.setLevel(logging.DEBUG)
+
+        # Print the config if in debug:
+        if opts.verbose:
+            common.print_config_dict(config_dict)
+
+        # main
+        main()
+
+    except Exception as outer_main_err:
+        raise RuntimeError(common.generic_error_message(error_code='AIML-100', err=outer_main_err))

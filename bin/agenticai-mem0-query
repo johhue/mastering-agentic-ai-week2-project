@@ -2,10 +2,7 @@
 """Inspect a page of hosted mem0.ai memories or retrieve one memory by ID."""
 from __future__ import annotations
 
-from optparse import Values
 import json
-import logging
-import os
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -13,54 +10,84 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from utils.config import ResearchError, integer, required
-from utils.cli import parse_options, create_parser, configure_cli_logging
+from utils.cli import parse_options, create_parser
+from utils import common
+from optparse import OptionParser, OptionGroup, Values, OptionValueError
+from dotenv import load_dotenv
 
-log = logging.getLogger(__name__)
-
+# Load variables from the .env file into the environment
+load_dotenv()
 
 def parse_args(argv: list[str] | None = None) -> Values:
     """Parse command options before initializing logging or external clients."""
+
+    try:
+
+        parser = OptionParser()
+
+        # Options
+        main_group = OptionGroup(parser, os.path.basename(__file__) + " options", "Also run the tool-calling loop after MCP discovery")
+        main_group.add_option('-w', '--with_agent', dest="with_agent", action="store_true", help="Sample Question", default="Who is the contact in the CAISO Cafe.")
+        main_group.add_option('-s', '--sample_question', dest="sample_question", type="string", action="store", help="Puppet Module")
+        main_group.add_option('-c', '--conversation', dest="conversation", action="store_true", help="Conduct a conversation or not.")
+        parser.add_option_group(main_group)
+
+        # Add the Common environment/app/component/node options
+        app_arg_group = common.get_app_arg_group(parser)
+        parser.add_option_group(app_arg_group)
+
+        # Add the standard args
+        common_arg_group = common.get_common_arg_group(parser)
+        parser.add_option_group(common_arg_group)
+
+        options, remainder = parser.parse_args()
+
+        return options
+
+    except Exception as parse_args_err:
+        raise RuntimeError(common.generic_error_message(error_code="PUPPET-100", err=parse_args_err))
+
     parser = create_parser(description=__doc__, argv=argv, prog=Path(__file__).name)
     parser.add_option('--company', help='Company namespace in P3_WORKSPACE')
     parser.add_option('--run-id', help='Restrict listing to one research run')
     parser.add_option('--kind', help='Artifact kind, such as discovery or briefing')
     parser.add_option('--memory-id', help='Retrieve one memory by its mem0 ID')
-    parser.add_option('--page', type="positive_int", default=1)
-    parser.add_option('--page-size', type="positive_int", default=20)
+    parser.add_option('--page', type="int", default=1)
+    parser.add_option('--page-size', type="int", default=20)
     args = parse_options(parser, argv)
-    if args.page_size > 100:
+    if opts.page_size > 100:
         parser.error('--page-size must be between 1 and 100.')
-    if args.memory_id and any((args.company, args.run_id, args.kind)):
+    if opts.memory_id and any((opts.company, opts.run_id, opts.kind)):
         parser.error('--memory-id cannot be combined with listing filters.')
     if any(value is not None and not value.strip()
-           for value in (args.company, args.run_id, args.kind, args.memory_id)):
+           for value in (opts.company, opts.run_id, opts.kind, opts.memory_id)):
         parser.error('Filter values must not be blank.')
     return args
 
 
 def main() -> int:
     """Read a scoped page or memory ID, printing complete JSON without changing data."""
-    args = parse_args()
+
     memory = None
     try:
         from comparison_app.memory_mem0 import SharedMemoryMem0
-        configure_cli_logging(args)
+
         settings = SimpleNamespace(mem0_key=required('MEM0_API_KEY'),
-            workspace=os.getenv('P3_WORKSPACE', 'market-research'),
+            workspace= common.get_required_env('P3_WORKSPACE', 'market-research'),
             timeout=integer('P3_TIMEOUT_SECONDS', 60, maximum=300))
         memory = SharedMemoryMem0(settings)
-        if args.memory_id:
-            result = memory.client.get(args.memory_id)
+        if opts.memory_id:
+            result = memory.client.get(opts.memory_id)
             log.info('Retrieved one hosted mem0 memory.')
         else:
-            filters = {'user_id': memory.namespace(args.company) if args.company else '*'}
-            if args.run_id:
-                filters['run_id'] = args.run_id
-            if args.kind:
-                filters['kind'] = args.kind
-            result = memory.client.get_all(filters=filters, page=args.page, page_size=args.page_size)
-            log.info('Retrieved mem0 listing page=%d page_size=%d.', args.page, args.page_size)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+            filters = {'user_id': memory.namespace(opts.company) if opts.company else '*'}
+            if opts.run_id:
+                filters['run_id'] = opts.run_id
+            if opts.kind:
+                filters['kind'] = opts.kind
+            result = memory.client.get_all(filters=filters, page=opts.page, page_size=opts.page_size)
+            log.info('Retrieved mem0 listing page=%d page_size=%d.', opts.page, opts.page_size)
+        log.info(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except ResearchError as configuration_error:
         log.error('%s', configuration_error)
@@ -78,4 +105,49 @@ def main() -> int:
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+
+    try:
+
+        import os
+        import platform
+
+        opts = parse_args()
+
+        hostname = platform.node()
+        script_label = os.path.basename(__file__).replace('.py', '')
+
+        app_list = []
+
+        log = common.initialize_logging(label=script_label)
+
+        # Load Env Variables
+
+        # Load config dict
+        default_config_files = common.get_default_config_files(os.path.abspath(__file__), __file__)
+        config_dict = common.load_config_file(opts.config_file, default_config_files)
+        if config_dict is None:
+            log.error(
+                "No config file could be loaded. Give -F <config file> or use one of default config files:\n\t" + '\n\t'.join(
+                    default_config_files))
+            sys.exit(1)
+
+        log.info(f"Loaded config file: {config_dict['loaded_config_file']}")
+        if opts.verbose:
+            import logging
+
+            log.setLevel(logging.DEBUG)
+
+        if opts.verbose:
+            import logging
+
+            log.setLevel(logging.DEBUG)
+
+        # Print the config if in debug:
+        if opts.verbose:
+            common.print_config_dict(config_dict)
+
+        # main
+        main()
+
+    except Exception as outer_main_err:
+        raise RuntimeError(common.generic_error_message(error_code='AIML-100', err=outer_main_err))

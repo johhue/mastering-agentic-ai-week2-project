@@ -10,9 +10,9 @@ server or Docker service is required.
 - [Operations run book](docs/runbook.md)
 - [Configuration reference](docs/configuration.md)
 
-Documentation reflects the source inspected on **2026-10-25**. The run book calls
-out current launcher, CLI and memory-tool limitations; older command examples in
-build history may describe behavior that is currently commented out.
+Documentation updated on **2026-10-26**. All bin tools use `OptionParser` and
+accept `--config PATH`. Precedence is environment, file, then command-line
+overrides last. See [bin command conventions](../bin/README.md).
 
 ## Start the interface
 
@@ -26,19 +26,20 @@ uv run python bin/agenticai-comparison-app.py
 The Python launcher serves the app at `http://127.0.0.1:5555` by default.
 Choose **Offline demo** for fictional research without external calls. Live mode
 requires credentials and `MEMORY_METHOD=MEM0` or `MEMORY_METHOD=FILESYSTEM`.
-The shell launcher has different port behavior; see the run book.
+The shell launcher forwards the same `--port`, `--address` and `--debug` options.
 
 ## Command-line status
 
 ```bash
-uv run python bin/agenticai-comparison-research
+uv run python bin/agenticai-comparison-research "Toyota" --memory-method MEM0 --output toyota.json
+uv run python bin/agenticai-comparison-research Demo --demo --format markdown --output demo.md
 ```
 
-**This currently starts paid live research for Toyota using filesystem memory.**
-The CLI has hardcoded values; argument parsing, demo flags, format selection and
-report-file writing are commented out. It does not create the advertised
-`/var/tmp/research_output.json`. Do not use older `--demo` examples as an offline
-check. Use the Streamlit demo or the offline tests in the run book instead.
+The company is required. Live mode uses paid services and the backend selected
+by `--memory-method` or `MEMORY_METHOD` (CLI fallback: FILESYSTEM). `--demo` uses
+fictional services without network calls. JSON goes to stdout by default;
+`--output` exclusively creates a new file. Existing output files are preserved.
+Use `--help` to inspect options without running research.
 
 ## Code map
 

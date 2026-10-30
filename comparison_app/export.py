@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from io import BytesIO
-import logging
 import os
 from pathlib import Path
 import re
@@ -17,9 +16,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import HRFlowable, KeepTogether, Paragraph, SimpleDocTemplate, Table, TableStyle
 from utils.config import ResearchError
 from comparison_app.models import Briefing, Claim
-from utils.common import configure_logging, get_required_env
 
-log = configure_logging()
 NAVY = colors.HexColor('#152B46')
 TEAL = colors.HexColor('#087F8C')
 

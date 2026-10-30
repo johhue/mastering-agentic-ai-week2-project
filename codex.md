@@ -1,5 +1,77 @@
 # Codex Build Log
 
+## Complete environment template (2026-10-29)
+
+Use `.env.demo` as the complete configuration catalog: copy it to root `.env`
+and supply credentials for the services you use. Settings are grouped by function;
+each has a purpose and sample. Optional aliases, font paths, test-only settings,
+and canonical `AGENTICAI_<COMMAND>_<DESTINATION>` overrides are commented out to
+preserve automatic defaults, interactive prompts, and unfiltered queries. Uncomment
+only needed overrides; do not set optional typed values to empty strings.
+The status-agent tests reference settings for a package absent from this checkout;
+their examples are explicitly test-only and PostgreSQL integration stays opt-in.
+The shared OpenAI credential is also used for embeddings. LOGGER_NAME,
+OPENAI_EMBEDDING_API_KEY and OPENAI_EMBEDDING_BASE_URL were removed from the template
+because current code does not read them. Runtime `.env` and `.env.example` are
+unchanged. When adding a CLI option or positional, also document its generated key
+here in `.env.demo`; `config` itself uses AGENTICAI_CONFIG, not a per-command key.
+
+## OptionParser and layered configuration (2026-10-26)
+
+All bin Python parsers now use native optparse.OptionParser.add_option and return
+optparse.Values through utils.cli.parse_options. The shared parser subclasses
+OptionParser for strict long-option matching and deferred default validation;
+custom optparse.Option types cover positive integers, nonempty text, Paths and
+Decimals. Native parser.parse_args still returns its normal options/positionals
+tuple. Commands bind declared positional inputs in parse_options and reject extras.
+
+Every command accepts --config PATH for a .env-format file, defaulting to root
+.env (or AGENTICAI_CONFIG). Precedence is environment baseline, file overrides,
+then explicit CLI overrides last. utils.cli centralizes canonical setting keys:
+AGENTICAI_<COMMAND_WITHOUT_PREFIX_OR_PY_SUFFIX>_<OPTION_DEST>, uppercase with
+underscores. Legacy environment aliases remain supported. Configured positionals
+can satisfy required inputs. Boolean flags have --no-... inverses; repeatable
+option config values are JSON arrays, replaced by explicitly supplied CLI lists.
+utils.common and utils.config respect the selected file in runtime/Streamlit
+loads so unrelated root defaults cannot overwrite it. Help skips runtime config
+loading and validation; no services start during help. See bin/README.md for
+examples and alias rules. These conventions supersede earlier parser notes.
+
+## Shared command-line argument parsing (2026-10-26)
+
+All Python entry points in bin now expose a documented parse_args(argv=None).
+utils/cli.py owns parser creation, .env-backed defaults, default-value help,
+strict long options (no abbreviations), --debug, positive-integer/nonempty-text
+validation, logging setup and Streamlit launch helpers. Keep parsing before
+logging, credentials and service initialization, so --help works offline even
+with invalid runtime/logging configuration. CLI flags override parsed defaults.
+Use LOG_LEVEL/P3_DEBUG/LOGGER_FILE in root .env for normal operation.
+Shared logging now loads .env with override=False so launcher debug settings
+are retained in the app process; the general load_environment default is unchanged.
+
+bin/README.md lists all commands and examples. Both app shell wrappers forward
+arguments to their matching Python entry point and start one Streamlit process.
+Both Python app launchers accept --port, --address and --debug; support-app.py
+detects an existing Streamlit context to render its UI rather than relaunching.
+Comparison defaults to P3_STREAMLIT_PORT=5555; support defaults to
+STREAMLIT_SUPPORT_APP_PORT=8501. Listener options override environment defaults.
+
+The comparison research parser and JSON/Markdown export are restored: company is
+required, --demo runs fictional services, --output exclusively creates a file,
+and --memory-method selects MEM0 or FILESYSTEM (MEMORY_METHOD default, fallback
+FILESYSTEM). This supersedes earlier notes about a hardcoded Toyota command.
+Memory CLI tools lazily import the actual SharedMemoryMem0 adapter after parsing.
+Hybrid RAG retains a question as text rather than joining its characters.
+OpenAI chat prompts when its optional question is omitted. Test-question output
+defaults to 20Questions.md in the working directory, matching its help text.
+
+Verification: run `uv run python -m unittest discover -s tests -p test_cli.py -v`
+and `uv run python -m unittest discover -s comparison_app/tests -v`. Tests use
+mocked providers and the real offline graph; no paid research is needed. The CLI
+suite checks all script help and unknown options from another working directory,
+explicit argv, invalid values, debug, launcher forwarding and output preservation.
+Test patch targets were updated to current renamed modules where needed.
+
 ## Streamlit application progress logging
 
 `comparison_app/app.py` logs at INFO before page setup, appearance/mode controls,
@@ -348,6 +420,14 @@ We also verified:
 The result is a working OpenAI + Pinecone customer support RAG application with both UI and CLI access, inspection tooling, test-question generation, and hallucination-aware fallback behavior.
 
 ## Comparison application — hosted mem0.ai
+
+`bin/agenticai-openai-chat` always prints the resolved SDK base URL, the JSON
+payload passed to the Responses API, and the complete response JSON, followed by
+the readable answer. Request diagnostics are flushed before the network call so
+they remain visible on failure. These diagnostics include prompt and response
+content; authorization headers are not printed. No new dependencies or settings
+are needed; OPENAI_API_KEY, OPENAI_MODEL and optional OPENAI_BASE_URL still come
+from the root .env (or the selected --config file).
 
 The current app lives in `comparison_app/`; launchers are in `bin/`.
 Rebuild with Python 3.12+, `uv sync`, and the root `.env.example` settings in

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import logging
 import os
 from pathlib import Path
 
@@ -17,7 +16,8 @@ class ResearchError(RuntimeError):
 
 def load_environment() -> None:
     """Load root .env from any working directory without overwriting test overrides."""
-    load_dotenv(ROOT / '.env', override=False)
+    load_dotenv(Path(os.environ['AGENTICAI_CONFIG']) if os.getenv('AGENTICAI_CONFIG') else ROOT / '.env',
+                override=False)
 
 
 def required(name: str) -> str:

@@ -2,71 +2,101 @@
 """Run live comparison research or a fictional offline demo from the terminal."""
 from __future__ import annotations
 
-from optparse import Values
 from contextlib import ExitStack
-import logging
 import os
 from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from utils.cli import parse_options, configure_cli_logging, create_parser
+from utils.cli import parse_options, create_parser
 from utils.config import ResearchError, Settings
+from utils import common
+from optparse import OptionParser, OptionGroup, Values, OptionValueError
+from dotenv import load_dotenv
 
-log = logging.getLogger(__name__)
-
+# Load variables from the .env file into the environment
+load_dotenv()
 
 def parse_args(argv: list[str] | None = None) -> Values:
-    """Parse and validate research options before loading service clients."""
-    parser = create_parser(__doc__, usage='%prog [options] COMPANY', argv=argv, prog=Path(__file__).name)
-    parser.add_option('--demo', action='store_true', help='Use fictional offline services without API calls.')
-    parser.add_option('--format', type='choice', choices=('json', 'markdown'), default='json', help='Briefing output format.')
-    parser.add_option('--output', type="path", help='Create a new output file instead of writing to stdout.')
-    parser.add_option('--memory-method', type='choice', choices=('MEM0', 'FILESYSTEM'),
-                        default=os.getenv('MEMORY_METHOD', 'FILESYSTEM'), help='Live memory backend (MEMORY_METHOD).')
-    args = parse_options(parser, argv, (('company', True),))
-    if len(args.company) > 180:
-        parser.error('Company must contain 1 to 180 characters.')
-    if args.memory_method not in ('MEM0', 'FILESYSTEM'):
-        parser.error('MEMORY_METHOD must be MEM0 or FILESYSTEM.')
-    return args
+
+    try:
+
+        parser = OptionParser()
+
+        # Options
+        main_group = OptionGroup(parser, os.path.basename(__file__) + " options", "Also run the tool-calling loop after MCP discovery")
+        main_group.add_option('-w', '--with_agent', dest="with_agent", action="store_true", help="Sample Question", default="Who is the contact in the CAISO Cafe.")
+        main_group.add_option('-s', '--sample_question', dest="sample_question", type="string", action="store", help="Puppet Module")
+        main_group.add_option('-c', '--conversation', dest="conversation", action="store_true", help="Conduct a conversation or not.")
+        parser.add_option_group(main_group)
+
+        # Add the Common environment/app/component/node options
+        app_arg_group = common.get_app_arg_group(parser)
+        parser.add_option_group(app_arg_group)
+
+        # Add the standard args
+        common_arg_group = common.get_common_arg_group(parser)
+        parser.add_option_group(common_arg_group)
+
+        options, remainder = parser.parse_args()
+
+        return options
+
+        """Parse and validate research options before loading service clients."""
+        parser = create_parser(__doc__, usage='%prog [options] COMPANY', argv=argv, prog=Path(__file__).name)
+        parser.add_option('--demo', action='store_true', help='Use fictional offline services without API calls.')
+        parser.add_option('--format', type='choice', choices=('json', 'markdown'), default='json',
+                          help='Briefing output format.')
+        parser.add_option('--output', type="path", help='Create a new output file instead of writing to stdout.')
+        parser.add_option('--memory-method', type='choice', choices=('MEM0', 'FILESYSTEM'),
+                          default = common.get_required_env('MEMORY_METHOD', 'FILESYSTEM'),
+                          help='Live memory backend (MEMORY_METHOD).')
+        args = parse_options(parser, argv, (('company', True),))
+        if len(opts.company) > 180:
+            parser.error('Company must contain 1 to 180 characters.')
+        if opts.memory_method not in ('MEM0', 'FILESYSTEM'):
+            parser.error('MEMORY_METHOD must be MEM0 or FILESYSTEM.')
+        return args
+
+    except Exception as parse_args_err:
+        raise RuntimeError(common.generic_error_message(error_code="PUPPET-100", err=parse_args_err))
 
 
 def main() -> int:
     """Execute the graph, export its briefing and close live clients on all paths."""
-    args = parse_args()
+
     clients = []
     try:
-        configure_cli_logging(args)
+
         from comparison_app.pipeline import ResearchPipeline
         from comparison_app.demo import DemoAnalyst, DemoMemory, DemoSearch
-        configure_cli_logging(args)
+
         with ExitStack() as files:
-            output = files.enter_context(args.output.expanduser().open('x', encoding='utf-8')) if args.output else sys.stdout
-            if args.demo:
+            output = files.enter_context(opts.output.expanduser().open('x', encoding='utf-8')) if opts.output else sys.stdout
+            if opts.demo:
                 search, analyst, memory = DemoSearch(), DemoAnalyst(), DemoMemory()
                 news_days = 30
                 log.warning('SYNTHETIC DEMO: output describes fictional companies.')
             else:
                 from comparison_app.analyst_service import Analyst
                 from comparison_app.search_service import TavilySearchService
-                if args.memory_method == 'MEM0':
+                if opts.memory_method == 'MEM0':
                     from comparison_app.memory_mem0 import SharedMemoryMem0 as Memory
                 else:
                     from comparison_app.memory_filesystem import SharedMemoryFileSystem as Memory
-                configure_cli_logging(args)
+
                 settings = Settings.from_env()
                 memory = Memory(settings)
                 clients.append(memory)
                 analyst = Analyst(settings)
                 clients.append(analyst)
                 search, news_days = TavilySearchService(settings), settings.news_days
-            log.info('Starting comparison research (demo=%s).', args.demo)
+            log.info('Starting comparison research (demo=%s).', opts.demo)
             pipeline = ResearchPipeline(search, analyst, memory, news_days)
-            state = pipeline.graph.invoke({'company': args.company, 'warnings': []}, config={'max_concurrency': 2})
-            briefing = state['briefing'].model_copy(update={'demo': args.demo})
-            if args.format == 'markdown':
+            state = pipeline.graph.invoke({'company': opts.company, 'warnings': []}, config={'max_concurrency': 2})
+            briefing = state['briefing'].model_copy(update={'demo': opts.demo})
+            if opts.format == 'markdown':
                 from comparison_app.export import markdown_briefing
                 content = markdown_briefing(briefing)
             else:

@@ -10,9 +10,7 @@ from utils.config import ResearchError, Settings
 from comparison_app.models import Source, usable_url, utc_now, validate_citations
 from comparison_app.analyst_rules import AnalysisRules
 from comparison_app.observability import message, observe_client, safe_url
-from utils.common import configure_logging, get_required_env
 
-log = configure_logging()
 
 T = TypeVar('T', bound=BaseModel)
 

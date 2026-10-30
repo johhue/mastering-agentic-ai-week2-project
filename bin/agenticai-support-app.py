@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from optparse import Values
 import math
 import os
 import sys
@@ -12,24 +11,48 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from utils import common
 
 import streamlit as st
 # Make the shared package available when this file is launched directly.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from utils.common import (
-    load_environment,
-    iter_support_files,
-    read_source,
-    split_text,
-    tokenize,
-    stable_vector_id,
-)
 from utils.cli import launch_streamlit, parse_server_args
+from optparse import OptionParser, OptionGroup, Values, OptionValueError
+from dotenv import load_dotenv
 
+# Load variables from the .env file into the environment
+load_dotenv()
 
 def parse_args(argv: list[str] | None = None) -> Values:
     """Parse listener and debugging options when launching outside Streamlit."""
+
+    try:
+
+        parser = OptionParser()
+
+        # Options
+        main_group = OptionGroup(parser, os.path.basename(__file__) + " options", "Also run the tool-calling loop after MCP discovery")
+        main_group.add_option('-w', '--with_agent', dest="with_agent", action="store_true", help="Sample Question", default="Who is the contact in the CAISO Cafe.")
+        main_group.add_option('-s', '--sample_question', dest="sample_question", type="string", action="store", help="Puppet Module")
+        main_group.add_option('-c', '--conversation', dest="conversation", action="store_true", help="Conduct a conversation or not.")
+        parser.add_option_group(main_group)
+
+        # Add the Common environment/app/component/node options
+        app_arg_group = common.get_app_arg_group(parser)
+        parser.add_option_group(app_arg_group)
+
+        # Add the standard args
+        common_arg_group = common.get_common_arg_group(parser)
+        parser.add_option_group(common_arg_group)
+
+        options, remainder = parser.parse_args()
+
+        return options
+
+    except Exception as parse_args_err:
+        raise RuntimeError(common.generic_error_message(error_code="PUPPET-100", err=parse_args_err))
+
     return parse_server_args(__doc__, 'STREAMLIT_SUPPORT_APP_PORT', 8501,
                              'STREAMLIT_SUPPORT_APP_ADDRESS', argv, prog=Path(__file__).name)
 
@@ -93,8 +116,8 @@ def load_corpus() -> list[CorpusChunk]:
     source files or code dependencies change.
     """
     chunks: list[CorpusChunk] = []
-    for path in iter_support_files(TEXT_SUFFIXES):
-        text = read_source(path)
+    for path in common.iter_support_files(TEXT_SUFFIXES):
+        text = common.read_source(path)
         if not text:
             continue
         for index, chunk in enumerate(split_text(text, CHUNK_SIZE, CHUNK_OVERLAP)):
@@ -375,7 +398,7 @@ def get_required_setting(name: str) -> str:
     Called by answer_question for required OpenAI and Pinecone credentials.
     Raises RuntimeError so the Streamlit UI can display the setup problem.
     """
-    value = os.getenv(name)
+    value = common.get_required_env(name, "X")
     if not value:
         raise RuntimeError(f"Missing {name} in .env")
     return value
@@ -518,18 +541,18 @@ def answer_question(question: str, settings: dict[str, Any], chunks: Sequence[Co
     """
     openai_api_key = get_required_setting("OPENAI_API_KEY")
     pinecone_api_key = get_required_setting("PINECONE_API_KEY")
-    index_name = os.getenv("PINECONE_INDEX_NAME") or os.getenv("PINECONE_INDEX")
+    index_name = common.get_required_env("PINECONE_INDEX_NAME", "X")
     if not index_name:
         raise RuntimeError("Missing PINECONE_INDEX_NAME in .env")
 
     openai_client = get_openai_client(openai_api_key)
     pinecone_index = get_pinecone_index(pinecone_api_key, index_name)
-    embedding_model = os.getenv("OPENAI_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL)
+    embedding_model = common.get_required_env("OPENAI_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL)
     embedding_dimensions = int(
-        os.getenv("OPENAI_EMBEDDING_DIMENSIONS", str(DEFAULT_EMBEDDING_DIMENSIONS))
+        common.get_required_env("OPENAI_EMBEDDING_DIMENSIONS", str(DEFAULT_EMBEDDING_DIMENSIONS))
     )
-    chat_model = os.getenv("OPENAI_CHAT_MODEL", DEFAULT_CHAT_MODEL)
-    namespace = os.getenv("PINECONE_NAMESPACE", DEFAULT_NAMESPACE)
+    chat_model = common.get_required_env("OPENAI_CHAT_MODEL", DEFAULT_CHAT_MODEL)
+    namespace = common.get_required_env("PINECONE_NAMESPACE", DEFAULT_NAMESPACE)
 
     keyword_index = build_keyword_index(chunks)
     keyword_hits = keyword_search(question, chunks, keyword_index, settings["top_k"])

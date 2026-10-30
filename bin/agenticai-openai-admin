@@ -9,10 +9,7 @@ OPENAI_MONTHLY_BILL_LIMIT_USD or OPENAI_MONTHLY_TOKEN_BUDGET.
 
 from __future__ import annotations
 
-from optparse import Values, OptionValueError
 import json
-import logging
-import os
 import sys
 from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime
@@ -26,13 +23,16 @@ from urllib.request import Request, urlopen
 # Make the shared package available when this file is launched directly.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from utils.cli import parse_options, create_parser, configure_cli_logging
-from utils.common import get_required_env
+from utils.cli import parse_options, create_parser
+from utils import common
+from optparse import OptionParser, OptionGroup, Values, OptionValueError
+from dotenv import load_dotenv
 
+# Load variables from the .env file into the environment
+load_dotenv()
 
 API_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_BUCKET_WIDTH = "1d"
-log = logging.getLogger(__name__)
 
 
 class OpenAIUsageError(RuntimeError):
@@ -44,6 +44,31 @@ def parse_args(argv: list[str] | None = None) -> Values:
 
     Called by main to determine the reporting window and optional local limits.
     """
+
+    try:
+
+        parser = OptionParser()
+
+        # Options
+        main_group = OptionGroup(parser, os.path.basename(__file__) + " options", "Also run the tool-calling loop after MCP discovery")
+        main_group.add_option('-l', '--list_models', dest="list_models", action="store_true", help="List Models", default=True)
+        parser.add_option_group(main_group)
+
+        # Add the Common environment/app/component/node options
+        app_arg_group = common.get_app_arg_group(parser)
+        parser.add_option_group(app_arg_group)
+
+        # Add the standard args
+        common_arg_group = common.get_common_arg_group(parser)
+        parser.add_option_group(common_arg_group)
+
+        options, remainder = parser.parse_args()
+
+        return options
+
+    except Exception as parse_args_err:
+        raise RuntimeError(common.generic_error_message(error_code="PUPPET-100", err=parse_args_err))
+
     parser = create_parser(
         description="List OpenAI models or show organization costs and token usage.",
         argv=argv, prog=Path(__file__).name,
@@ -73,7 +98,7 @@ def parse_args(argv: list[str] | None = None) -> Values:
     parser.add_option(
         "--monthly-bill-limit-usd",
         type="decimal",
-        default=os.getenv("OPENAI_MONTHLY_BILL_LIMIT_USD") or None,
+        default = common.get_required_env("OPENAI_MONTHLY_BILL_LIMIT_USD", "X"),
         help=(
             "Optional local monthly USD bill limit. Defaults to "
             "OPENAI_MONTHLY_BILL_LIMIT_USD."
@@ -82,7 +107,7 @@ def parse_args(argv: list[str] | None = None) -> Values:
     parser.add_option(
         "--monthly-token-budget",
         type="int",
-        default=os.getenv("OPENAI_MONTHLY_TOKEN_BUDGET") or None,
+        default = common.get_required_env("OPENAI_MONTHLY_TOKEN_BUDGET", "X"),
         help=(
             "Optional local monthly token budget. Defaults to "
             "OPENAI_MONTHLY_TOKEN_BUDGET."
@@ -140,8 +165,10 @@ def get_json(api_key: str, path: str, params: Mapping[str, Any]) -> dict[str, An
     Called by paginated_get for each costs or usage page.
     """
     query = urlencode({key: value for key, value in params.items() if value is not None})
-    base_url = (os.getenv("OPENAI_BASE_URL") or API_BASE_URL).rstrip("/")
-    url = f"{base_url}{path}" + (f"?{query}" if query else "")
+    base_url = common.get_required_env("OPENAI_BASE_URL", API_BASE_URL).rstrip("/")
+
+    url = f"{base_url}{path}?{query}"
+
     request = Request(
         url,
         headers={
@@ -344,22 +371,14 @@ def main() -> int:
 
     Called by the module entrypoint when this script is executed directly.
     """
-    args = parse_args()
-    configure_cli_logging(args)
-    key_env = args.api_key_env or (
-        "OPENAI_API_KEY" if args.list_models else "OPENAI_ADMIN_KEY"
-    )
-    api_key = get_required_env(
-        key_env,
-        OpenAIUsageError,
-        f"Missing {key_env}. Add the appropriate OpenAI API key to .env.",
-    )
-    if args.list_models:
+
+    api_key = common.get_required_env("OPENAI_API_KEY", "X")
+    if opts.list_models:
         for model in fetch_models(api_key):
-            print(model["id"])
+            log.info(model["id"])
         return 0
-    start_time = args.start_time or current_month_start()
-    end_time = args.end_time or current_time()
+    start_time = opts.start_time or current_month_start()
+    end_time = opts.end_time or current_time()
     if end_time <= start_time:
         raise OpenAIUsageError("--end-time must be greater than --start-time.")
 
@@ -370,18 +389,54 @@ def main() -> int:
         end_time=end_time,
         total_cost=total_cost,
         usage=usage,
-        monthly_bill_limit_usd=args.monthly_bill_limit_usd,
-        monthly_token_budget=args.monthly_token_budget,
+        monthly_bill_limit_usd=opts.monthly_bill_limit_usd,
+        monthly_token_budget=opts.monthly_token_budget,
     )
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
+
     try:
-        raise SystemExit(main())
-    except KeyboardInterrupt:
-        log.error("Interrupted.")
-        raise SystemExit(130) from None
-    except OpenAIUsageError as admin_cli_error:
-        log.error("Error: %s", admin_cli_error)
-        raise SystemExit(1) from admin_cli_error
+
+        import os
+        import platform
+
+        opts = parse_args()
+
+        hostname = platform.node()
+        script_label = os.path.basename(__file__).replace('.py', '')
+
+        app_list = []
+
+        log = common.initialize_logging(label=script_label)
+
+        # Load config dict
+        default_config_files = common.get_default_config_files(os.path.abspath(__file__), __file__)
+        config_dict = common.load_config_file(opts.config_file, default_config_files)
+        if config_dict is None:
+            log.error(
+                "No config file could be loaded. Give -F <config file> or use one of default config files:\n\t" + '\n\t'.join(
+                    default_config_files))
+            sys.exit(1)
+
+        log.info(f"Loaded config file: {config_dict['loaded_config_file']}")
+        if opts.verbose:
+            import logging
+
+            log.setLevel(logging.DEBUG)
+
+        if opts.verbose:
+            import logging
+
+            log.setLevel(logging.DEBUG)
+
+        # Print the config if in debug:
+        if opts.verbose:
+            common.print_config_dict(config_dict)
+
+        # main
+        main()
+
+    except Exception as outer_main_err:
+        raise RuntimeError(common.generic_error_message(error_code='AIML-100', err=outer_main_err))

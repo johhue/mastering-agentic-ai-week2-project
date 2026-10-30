@@ -7,26 +7,28 @@ namespace, fetches their metadata, and summarizes distinct source files.
 
 from __future__ import annotations
 
-from optparse import Values
-import logging
-import os
 import sys
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from optparse import OptionParser, OptionGroup, Values, OptionValueError
+from dotenv import load_dotenv
+
+# Load variables from the .env file into the environment
+load_dotenv()
 
 # Direct execution puts bin/, rather than the project root, on sys.path.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from utils.cli import parse_options, create_parser, configure_cli_logging
-from utils.common import batched, get_field, get_required_env
+from utils.cli import parse_options, create_parser
+from utils import common
+
 from pinecone import Pinecone, PineconeException
 
 DEFAULT_NAMESPACE = "__default__"
 DEFAULT_BATCH_SIZE = 100
-log = logging.getLogger(__name__)
 
 
 class QueryPineconeError(RuntimeError):
@@ -67,40 +69,60 @@ def parse_args(argv: list[str] | None = None) -> Values:
 
     Called by main to determine the target index, namespace, and output options.
     """
-    parser = create_parser(
-        description="List source files represented by vectors in a Pinecone index.",
-        argv=argv, prog=Path(__file__).name,
-    )
-    parser.add_option(
-        "--index",
-        default=os.getenv("PINECONE_INDEX_NAME") or os.getenv("PINECONE_INDEX"),
-        help="Pinecone index name. Defaults to PINECONE_INDEX_NAME or PINECONE_INDEX.",
-    )
-    parser.add_option(
-        "--namespace",
-        default=os.getenv("PINECONE_NAMESPACE", DEFAULT_NAMESPACE),
-        help="Pinecone namespace to inspect.",
-    )
-    parser.add_option(
-        "--all-namespaces",
-        action="store_true",
-        help="Inspect every namespace reported by Pinecone index stats.",
-    )
-    parser.add_option(
-        "--batch-size",
-        type="positive_int",
-        default=DEFAULT_BATCH_SIZE,
-        help="Number of vector IDs to fetch at a time.",
-    )
-    parser.add_option(
-        "--show-chunks",
-        action="store_true",
-        help="Print vector IDs and chunk indexes under each source file.",
-    )
-    args = parse_options(parser, argv)
-    if not 1 <= args.batch_size <= 1000:
-        parser.error("--batch-size must be between 1 and 1000")
-    return args
+
+    try:
+
+        parser = OptionParser()
+
+        # Options
+        main_group = OptionGroup(parser, os.path.basename(__file__) + " options", "Also run the tool-calling loop after MCP discovery")
+        main_group.add_option('-w', '--with_agent', dest="with_agent", action="store_true", help="Sample Question", default="Who is the contact in the CAISO Cafe.")
+        main_group.add_option('-s', '--sample_question', dest="sample_question", type="string", action="store", help="Puppet Module")
+        main_group.add_option('-c', '--conversation', dest="conversation", action="store_true", help="Conduct a conversation or not.")
+
+        main_group.add_option(
+            "--index",
+            default=common.get_required_env("PINECONE_INDEX_NAME", "X"),
+            help="Pinecone index name. Defaults to PINECONE_INDEX_NAME or PINECONE_INDEX.",
+        )
+        main_group.add_option(
+            "--namespace",
+            default=common.get_required_env("PINECONE_NAMESPACE", DEFAULT_NAMESPACE),
+            help="Pinecone namespace to inspect.",
+        )
+        main_group.add_option(
+            "--all-namespaces",
+            action="store_true",
+            help="Inspect every namespace reported by Pinecone index stats.",
+        )
+        main_group.add_option(
+            "--batch-size",
+            type="int",
+            default=DEFAULT_BATCH_SIZE,
+            help="Number of vector IDs to fetch at a time.",
+        )
+        main_group.add_option(
+            "--show-chunks",
+            action="store_true",
+            help="Print vector IDs and chunk indexes under each source file.",
+        )
+
+        parser.add_option_group(main_group)
+
+        # Add the Common environment/app/component/node options
+        app_arg_group = common.get_app_arg_group(parser)
+        parser.add_option_group(app_arg_group)
+
+        # Add the standard args
+        common_arg_group = common.get_common_arg_group(parser)
+        parser.add_option_group(common_arg_group)
+
+        options, remainder = parser.parse_args()
+
+        return options
+
+    except Exception as parse_args_err:
+        raise RuntimeError(common.generic_error_message(error_code="PUPPET-100", err=parse_args_err))
 
 
 def flatten_list_response(response: Any) -> Iterator[str]:
@@ -178,11 +200,11 @@ def fetch_metadata(index: Any, ids: Sequence[str], namespace: str) -> dict[str, 
             f"Unexpected error while fetching metadata in namespace '{namespace}': {unexpected_fetch_error}"
         ) from unexpected_fetch_error
 
-    vectors = get_field(response, "vectors", {}) or {}
+    vectors = common.get_field(response, "vectors", {}) or {}
 
     metadata_by_id: dict[str, dict[str, Any]] = {}
     for vector_id, vector in vectors.items():
-        metadata = get_field(vector, "metadata", {}) or {}
+        metadata = common.get_field(vector, "metadata", {}) or {}
         metadata_by_id[str(vector_id)] = dict(metadata)
     return metadata_by_id
 
@@ -199,7 +221,7 @@ def summarize_sources(
     vector_ids = list_vector_ids(index, namespace)
     summaries: dict[str, SourceSummary] = {}
 
-    for id_batch in batched(vector_ids, batch_size):
+    for id_batch in common.batched(vector_ids, batch_size):
         metadata_by_id = fetch_metadata(index, id_batch, namespace)
         for vector_id in id_batch:
             metadata = metadata_by_id.get(vector_id, {})
@@ -234,7 +256,7 @@ def list_namespaces(index: Any) -> list[str]:
             f"Unexpected error while listing Pinecone namespaces: {unexpected_namespace_error}"
         ) from unexpected_namespace_error
 
-    namespaces = get_field(stats, "namespaces", {}) or {}
+    namespaces = common.get_field(stats, "namespaces", {}) or {}
     if isinstance(namespaces, dict):
         return sorted(str(name) for name in namespaces.keys())
     return []
@@ -276,43 +298,74 @@ def main() -> int:
 
     Called by the module entrypoint when this script is executed directly.
     """
-    args = parse_args()
-    try:
-        configure_cli_logging(args)
-    except OSError as logging_setup_error:
-        logging.basicConfig(level=logging.INFO, format="%(message)s", force=True)
-        raise QueryPineconeError(f"Could not configure logging: {logging_setup_error}") from logging_setup_error
-    pinecone_api_key = get_required_env("PINECONE_API_KEY", QueryPineconeError)
-    if not args.index:
+
+    pinecone_api_key = common.get_required_env("PINECONE_API_KEY", "X")
+    if not opts.index:
         raise QueryPineconeError("Missing PINECONE_INDEX_NAME. Add it to .env.")
 
-    index = create_pinecone_index(pinecone_api_key, args.index)
+    index = create_pinecone_index(pinecone_api_key, opts.index)
 
-    namespaces = list_namespaces(index) if args.all_namespaces else [args.namespace]
+    namespaces = list_namespaces(index) if opts.all_namespaces else [opts.namespace]
     if not namespaces:
         log.info("No namespaces found.")
         return 0
 
     total_vectors = 0
     total_files = 0
-    log.info("Index: %s", args.index)
+    log.info("Index: %s", opts.index)
     for namespace in namespaces:
-        summaries, vector_count = summarize_sources(index, namespace, args.batch_size)
+        summaries, vector_count = summarize_sources(index, namespace, opts.batch_size)
         total_vectors += vector_count
         total_files += len(summaries)
-        print_summary(namespace, summaries, vector_count, args.show_chunks)
+        print_summary(namespace, summaries, vector_count, opts.show_chunks)
 
     log.info("\nTotal vectors: %s", total_vectors)
     log.info("Total file entries: %s", total_files)
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
+
     try:
-        raise SystemExit(main())
-    except KeyboardInterrupt:
-        log.error("Interrupted.")
-        raise SystemExit(130) from None
-    except (QueryPineconeError, ValueError) as query_cli_error:
-        log.error("Error: %s", query_cli_error)
-        raise SystemExit(1) from query_cli_error
+
+        import os
+        import platform
+
+        opts = parse_args()
+
+        hostname = platform.node()
+        script_label = os.path.basename(__file__).replace('.py', '')
+
+        app_list = []
+
+        log = common.initialize_logging(label=script_label)
+
+        # Load config dict
+        default_config_files = common.get_default_config_files(os.path.abspath(__file__), __file__)
+        config_dict = common.load_config_file(opts.config_file, default_config_files)
+        if config_dict is None:
+            log.error(
+                "No config file could be loaded. Give -F <config file> or use one of default config files:\n\t" + '\n\t'.join(
+                    default_config_files))
+            sys.exit(1)
+
+        log.info(f"Loaded config file: {config_dict['loaded_config_file']}")
+        if opts.verbose:
+            import logging
+
+            log.setLevel(logging.DEBUG)
+
+        if opts.verbose:
+            import logging
+
+            log.setLevel(logging.DEBUG)
+
+        # Print the config if in debug:
+        if opts.verbose:
+            common.print_config_dict(config_dict)
+
+        # main
+        main()
+
+    except Exception as outer_main_err:
+        raise RuntimeError(common.generic_error_message(error_code='AIML-100', err=outer_main_err))
