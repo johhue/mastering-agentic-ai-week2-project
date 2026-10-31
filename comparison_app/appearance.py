@@ -9,6 +9,9 @@ from pathlib import Path
 import streamlit as st
 from utils.config import ROOT
 
+from utils import common
+
+log = common.initialize_logging(__file__)
 
 @lru_cache(maxsize=4)
 def image_data_uri(path: str, modified_ns: int) -> str:

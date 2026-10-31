@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from tavily import TavilyClient
 from utils.config import ResearchError, Settings
 from comparison_app.models import Source, usable_url, utc_now, validate_citations
-from comparison_app.observability import Observability
+from utils import common
 
 T = TypeVar('T', bound=BaseModel)
 
@@ -25,7 +25,6 @@ class SearchServiceWikipedia:
         self.config_dict = config_dict
         self.settings = settings
         self.search_client = TavilyClient(api_key=settings.tavily_key)
-        self.observability = Observability(log=log)
 
     def search(self, query: str, topic: str = 'general') -> list[Source]:
         """Retry Tavily reads, preserve dates, and omit invalid or undated news links."""
@@ -38,8 +37,8 @@ class SearchServiceWikipedia:
         for attempt in range(3):
             try:
                 self.log.info('External Tavily POST url=%s attempt=%d topic=%s',
-                         safe_url(str(self.search_client.base_url).rstrip('/') + '/search'), attempt + 1, topic)
-                self.observability.message('research agent', 'Tavily', 'Searching for fresh evidence.', {'query': query, 'topic': topic})
+                         common.safe_url(str(self.search_client.base_url).rstrip('/') + '/search'), attempt + 1, topic)
+                common.message('research agent', 'Tavily', 'Searching for fresh evidence.', {'query': query, 'topic': topic})
                 response = self.client.search(query=query, **options)
                 evidence = []
 
@@ -69,7 +68,7 @@ class SearchServiceWikipedia:
                 self.log.info('Tavily %s search returned %d usable sources.', topic, len(evidence))
                 for source in evidence:
                     self.log.info('Search evidence source=%s url=%s (returned by Tavily; not fetched directly)',
-                             source.id, self.observability.safe_url(source.url))
+                             source.id, common.safe_url(source.url))
                 return evidence
             except Exception as search_error:
                 if attempt == 2:

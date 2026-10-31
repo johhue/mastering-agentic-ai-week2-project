@@ -19,7 +19,9 @@ from comparison_app.models import Briefing, Claim
 
 NAVY = colors.HexColor('#152B46')
 TEAL = colors.HexColor('#087F8C')
+from utils import common
 
+log = common.initialize_logging(__file__)
 
 def citation_numbers(briefing: Briefing) -> dict[str, int]:
     """Use short, consistent citation numbers in both PDF and screen briefings."""

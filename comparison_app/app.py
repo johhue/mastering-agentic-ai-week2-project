@@ -19,6 +19,10 @@ from comparison_app.analyst_service import Analyst
 from comparison_app.appearance import render_appearance
 from comparison_app.analyst_rules import AnalysisRules
 
+from utils import common
+
+log = common.initialize_logging(__file__)
+
 def clear_chat_history() -> None:
     """Clear this session's research history and downloads while retaining preferences."""
     log.info('Clearing session research history and downloads.')

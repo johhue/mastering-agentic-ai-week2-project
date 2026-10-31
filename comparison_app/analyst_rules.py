@@ -8,8 +8,6 @@ from openai import OpenAI
 from pydantic import BaseModel
 from utils.config import ResearchError, Settings
 from comparison_app.models import Source, usable_url, utc_now, validate_citations
-from comparison_app.observability import message, observe_client, safe_url
-
 
 class AnalysisRules:
     """Use strict typed extraction with the existing OpenAI-compatible endpoint."""

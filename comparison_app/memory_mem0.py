@@ -10,7 +10,6 @@ import httpx
 
 from utils.config import ROOT, ResearchError, Settings
 from comparison_app.models import utc_now
-from comparison_app.observability import message, log_request, log_response
 from utils import common
 
 
@@ -32,7 +31,7 @@ class SharedMemoryMem0:
         try:
             from mem0 import MemoryClient
             self.transport = httpx.Client(timeout=settings.timeout,
-                event_hooks={'request': [log_request], 'response': [log_response]})
+                event_hooks={'request': [common.log_request], 'response': [common.log_response]})
             self.client = MemoryClient(api_key=settings.mem0_key, client=self.transport)
             self.log.info('Hosted mem0.ai memory initialized.')
         except Exception as memory_init_error:
@@ -65,7 +64,7 @@ class SharedMemoryMem0:
             if not result.get('results'):
                 raise ResearchError('mem0 did not confirm a memory write.')
             self.log.info('Saved %s agent artifact to shared mem0 memory.', kind)
-            message('agent', 'mem0', f'Run {run_id}: saved {kind}.', payload)
+            common.message('agent', 'mem0', f'Run {run_id}: saved {kind}.', payload)
             return [row['id'] for row in result['results']]
         except ResearchError as research_error:
             self.log.error(f"Got a research error: {research_error}.")
@@ -90,7 +89,7 @@ class SharedMemoryMem0:
                 raise ResearchError('Shared memory returned an unexpected artifact type.')
             payload = json.loads(metadata['artifact_json'])
             self.log.info('Retrieved %s artifact from shared mem0 memory.', kind)
-            message('mem0', 'agent', f'Run {run_id}: retrieved {kind}.', payload)
+            common.message('mem0', 'agent', f'Run {run_id}: retrieved {kind}.', payload)
             return payload
         except ResearchError as research_error:
             self.log.error(f"Got a research error: {research_error}.")

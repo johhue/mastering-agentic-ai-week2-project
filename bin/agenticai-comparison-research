@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from contextlib import ExitStack
-import os
 from pathlib import Path
 import sys
 
@@ -26,9 +25,16 @@ def parse_args(argv: list[str] | None = None) -> Values:
 
         # Options
         main_group = OptionGroup(parser, os.path.basename(__file__) + " options", "Also run the tool-calling loop after MCP discovery")
-        main_group.add_option('-w', '--with_agent', dest="with_agent", action="store_true", help="Sample Question", default="Who is the contact in the CAISO Cafe.")
+        main_group.add_option('-X', '--company', dest="company", action="store", type="str", help="Company", default="Company by which to do research.")
         main_group.add_option('-s', '--sample_question', dest="sample_question", type="string", action="store", help="Puppet Module")
         main_group.add_option('-c', '--conversation', dest="conversation", action="store_true", help="Conduct a conversation or not.")
+        main_group.add_option('--demo', action='store_true', help='Use fictional offline services without API calls.')
+        main_group.add_option('--format', type='choice', choices=('json', 'markdown'), default='json',
+                          help='Briefing output format.')
+        main_group.add_option('--output', type="str", help='Create a new output file instead of writing to stdout.')
+        main_group.add_option('--memory-method', type='str',
+                          default = common.get_required_env('MEMORY_METHOD', 'FILESYSTEM'),
+                          help='Live memory backend (MEMORY_METHOD).')
         parser.add_option_group(main_group)
 
         # Add the Common environment/app/component/node options
@@ -43,21 +49,6 @@ def parse_args(argv: list[str] | None = None) -> Values:
 
         return options
 
-        """Parse and validate research options before loading service clients."""
-        parser = create_parser(__doc__, usage='%prog [options] COMPANY', argv=argv, prog=Path(__file__).name)
-        parser.add_option('--demo', action='store_true', help='Use fictional offline services without API calls.')
-        parser.add_option('--format', type='choice', choices=('json', 'markdown'), default='json',
-                          help='Briefing output format.')
-        parser.add_option('--output', type="path", help='Create a new output file instead of writing to stdout.')
-        parser.add_option('--memory-method', type='choice', choices=('MEM0', 'FILESYSTEM'),
-                          default = common.get_required_env('MEMORY_METHOD', 'FILESYSTEM'),
-                          help='Live memory backend (MEMORY_METHOD).')
-        args = parse_options(parser, argv, (('company', True),))
-        if len(opts.company) > 180:
-            parser.error('Company must contain 1 to 180 characters.')
-        if opts.memory_method not in ('MEM0', 'FILESYSTEM'):
-            parser.error('MEMORY_METHOD must be MEM0 or FILESYSTEM.')
-        return args
 
     except Exception as parse_args_err:
         raise RuntimeError(common.generic_error_message(error_code="PUPPET-100", err=parse_args_err))
@@ -91,9 +82,9 @@ def main() -> int:
                 clients.append(memory)
                 analyst = Analyst(settings)
                 clients.append(analyst)
-                search, news_days = TavilySearchService(settings), settings.news_days
+                search, news_days = TavilySearchService(settings=settings, log=log), settings.news_days
             log.info('Starting comparison research (demo=%s).', opts.demo)
-            pipeline = ResearchPipeline(search, analyst, memory, news_days)
+            pipeline = ResearchPipeline(search=search, analyst=analyst, memory=memory, news_days=news_days, log=log)
             state = pipeline.graph.invoke({'company': opts.company, 'warnings': []}, config={'max_concurrency': 2})
             briefing = state['briefing'].model_copy(update={'demo': opts.demo})
             if opts.format == 'markdown':
@@ -112,15 +103,60 @@ def main() -> int:
         log.error('Comparison research failed: %s', research_error)
         return 1
     except Exception as cli_error:
-        log.error('Comparison research failed (%s). Check configuration, service access and output path.', type(cli_error).__name__)
+        log.error('Comparison research failed (%s) %s. Check configuration, service access and output path.', type(cli_error).__name__, cli_error)
         return 1
     finally:
         for client in reversed(clients):
             try:
                 client.close()
             except Exception as cleanup_error:
-                log.warning('Research client cleanup failed (%s).', type(cleanup_error).__name__)
+                log.warning('Research client cleanup failed (%s). %s', type(cleanup_error).__name__, cleanup_error)
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+
+    try:
+
+        import os
+        import platform
+
+        opts = parse_args()
+
+        hostname = platform.node()
+        script_label = os.path.basename(__file__).replace('.py', '')
+
+        app_list = []
+
+        log = common.initialize_logging(label=script_label)
+
+        # Load Env Variables
+
+        # Load config dict
+        default_config_files = common.get_default_config_files(os.path.abspath(__file__), __file__)
+        config_dict = common.load_config_file(opts.config_file, default_config_files)
+        if config_dict is None:
+            log.error(
+                "No config file could be loaded. Give -F <config file> or use one of default config files:\n\t" + '\n\t'.join(
+                    default_config_files))
+            sys.exit(1)
+
+        log.info(f"Loaded config file: {config_dict['loaded_config_file']}")
+        if opts.verbose:
+            import logging
+
+            log.setLevel(logging.DEBUG)
+
+        if opts.verbose:
+            import logging
+
+            log.setLevel(logging.DEBUG)
+
+        # Print the config if in debug:
+        if opts.verbose:
+            common.print_config_dict(config_dict)
+
+        # main
+        main()
+
+    except Exception as outer_main_err:
+        raise RuntimeError(common.generic_error_message(error_code='AIML-100', err=outer_main_err))

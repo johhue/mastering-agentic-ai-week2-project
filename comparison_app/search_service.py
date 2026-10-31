@@ -11,16 +11,17 @@ from pydantic import BaseModel
 from tavily import TavilyClient
 from utils.config import ResearchError, Settings
 from comparison_app.models import Source, usable_url, utc_now, validate_citations
-from comparison_app.observability import message, observe_client, safe_url
+from utils import common
 
 T = TypeVar('T', bound=BaseModel)
 
 class TavilySearchService:
     """Collect fresh, bounded search excerpts from Tavily, without persistent caching."""
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, log=None):
         """Configure the primary search source with an explicit request timeout."""
         self.settings = settings
+        self.log = log
         self.client = TavilyClient(api_key=settings.tavily_key)
 
     def search(self, query: str, topic: str = 'general') -> list[Source]:
@@ -33,9 +34,9 @@ class TavilySearchService:
             options['days'] = self.settings.news_days
         for attempt in range(3):
             try:
-                log.info('External Tavily POST url=%s attempt=%d topic=%s',
-                         safe_url(str(self.client.base_url).rstrip('/') + '/search'), attempt + 1, topic)
-                message('research agent', 'Tavily', 'Searching for fresh evidence.', {'query': query, 'topic': topic})
+                self.log.info('External Tavily POST url=%s attempt=%d topic=%s',
+                         common.safe_url(str(self.client.base_url).rstrip('/') + '/search'), attempt + 1, topic)
+                common.message('research agent', 'Tavily', 'Searching for fresh evidence.', {'query': query, 'topic': topic})
                 response = self.client.search(query=query, **options)
                 evidence = []
 
@@ -62,14 +63,14 @@ class TavilySearchService:
                         content=(row.get('content') or '')[:10000],
                         published_at=published, retrieved_at=utc_now(), topic=topic))
 
-                log.info('Tavily %s search returned %d usable sources.', topic, len(evidence))
+                self.log.info('Tavily %s search returned %d usable sources.', topic, len(evidence))
                 for source in evidence:
-                    log.info('Search evidence source=%s url=%s (returned by Tavily; not fetched directly)',
-                             source.id, safe_url(source.url))
+                    self.log.info('Search evidence source=%s url=%s (returned by Tavily; not fetched directly)',
+                             source.id, common.safe_url(source.url))
                 return evidence
             except Exception as search_error:
                 if attempt == 2:
                     raise ResearchError('Tavily search failed. Check TAVILY_API_KEY, quota, and connectivity.') from search_error
-                log.warning('Tavily request failed (%s); retrying.', type(search_error).__name__)
+                self.log.warning('Tavily request failed (%s) %s; retrying.', type(search_error).__name__, search_error)
                 time.sleep(2 ** attempt)
         raise ResearchError('Tavily retry budget exhausted.')

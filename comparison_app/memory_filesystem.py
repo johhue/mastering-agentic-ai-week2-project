@@ -9,7 +9,6 @@ from threading import RLock
 import httpx
 from utils.config import ROOT, ResearchError, Settings
 from comparison_app.models import utc_now
-from comparison_app.observability import message, log_request, log_response
 
 
 class SharedMemoryFileSystem:
